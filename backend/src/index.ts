@@ -2,6 +2,9 @@
  * Backend service for Tom's Diary
  */
 
+import dotenv from 'dotenv';
+dotenv.config();
+
 import { startWebSocketServer } from './server/websocket.js';
 import { loadConfig } from './config.js';
 

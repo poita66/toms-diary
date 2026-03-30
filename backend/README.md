@@ -8,9 +8,12 @@ The backend service is a TypeScript/Node.js application that powers the AI funct
 
 - **Runtime**: Node.js 24
 - **Language**: TypeScript
-- **Protocol**: WebSocket (primary), HTTP (health checks, admin)
-- **VLM**: vLLM with Qwen3.5 27b 4-bit AWQ (initial)
-- **Handwriting Rendering**: TBD (research needed)
+- **Protocol**: WebSocket
+- **LLM Client**: OpenAI SDK (compatible with vLLM, OpenAI, and other OpenAI-compatible APIs)
+- **Image Processing**: Custom processor with PNG/JPEG support
+- **Handwriting Rendering**: Canvas-based font rendering (Caveat font)
+- **Validation**: Zod
+- **Dependencies**: ws, openai, canvas, zod
 
 ## Core Features
 
@@ -73,25 +76,31 @@ The backend service is a TypeScript/Node.js application that powers the AI funct
 
 ### Configuration
 
-Create a `.env` file in the project root:
+Copy `.env.example` to `.env` and configure:
 
 ```bash
 # Server
 PORT=8080
 HOST=0.0.0.0
 
-# vLLM
+# LLM Configuration (OpenAI-compatible)
+# For vLLM:
 VLLM_HOST=localhost
 VLLM_PORT=8000
-VLLM_MODEL=Qwen/Qwen3.5-27b-4bit-AWQ
+VLLM_MODEL=Qwen/Qwen2-VL-7B-Instruct
+VLLM_API_KEY=
 
-# Handwriting Rendering
-RENDERER_HOST=localhost
-RENDERER_PORT=8001
+# For OpenAI API:
+# VLLM_HOST=https://api.openai.com/v1
+# VLLM_PORT=443
+# VLLM_MODEL=gpt-4o
+# VLLM_API_KEY=your-api-key
 
 # Logging
-LOG_LEVEL=debug
+LOG_LEVEL=info
 ```
+
+See `.env.example` for all available options.
 
 ## Architecture
 
@@ -124,14 +133,71 @@ LOG_LEVEL=debug
 
 ### Component Details
 
-#### WebSocket Server (`src/server/`)
+#### WebSocket Server (`src/server/websocket.ts`)
 
-- Manages client connections
-- Handles message routing
-- Implements protocol for image/receiving data
-- Supports reconnection with state preservation
+- Manages client connections with session tracking
+- Message validation using Zod schemas
+- Routes messages to appropriate handlers
+- Handles streaming responses to client
+- Graceful connection lifecycle management
 
-#### Image Processor (`src/image/`)
+#### Image Processor (`src/image/processor.ts`)
+
+- Decodes base64 image data (PNG/JPEG)
+- Validates image format and extracts metadata
+- Handles data URI prefixes
+- Extracts dimensions from image headers
+
+#### Image Cache (`src/image/cache.ts`)
+
+- LRU cache for processed images
+- Session-based organization
+- Automatic cleanup of old entries
+
+#### LLM Client (`src/llm/client.ts`)
+
+- OpenAI SDK wrapper for compatibility
+- Supports streaming and non-streaming modes
+- Works with vLLM, OpenAI, or any OpenAI-compatible API
+- Configurable via environment variables
+
+#### LLM Orchestrator (`src/llm/orchestrator.ts`)
+
+- Coordinates image → LLM → response flow
+- Constructs vision model prompts
+- Streams tokens from LLM
+
+#### Handwriting Renderer (`src/renderer/handwriting.ts`)
+
+- Canvas-based text rendering
+- Uses "Caveat" handwriting font
+- Adds natural variation (rotation, spacing)
+- Streams incremental render chunks
+
+#### Stream Coordinator (`src/stream/coordinator.ts`)
+
+- Orchestrates full pipeline: image → LLM → renderer → client
+- Buffers tokens for batched rendering
+- Manages backpressure and flow control
+- Handles errors gracefully
+
+#### Session Manager (`src/session/manager.ts`)
+
+- Tracks client sessions
+- Stores session state (images, status, metadata)
+- Automatic cleanup on disconnect
+
+#### Error Handler (`src/middleware/errorHandler.ts`)
+
+- Centralized error classification
+- Standardized error responses
+- Error context collection
+
+#### Logger (`src/utils/logger.ts`)
+
+- Structured logging with session tracking
+- Performance timing utilities
+- JSON output in production, colored in dev
 
 - Validates incoming images
 - Resizes/transforms if needed
@@ -245,9 +311,17 @@ If VLM doesn't work well:
 
 ## Handwriting Rendering
 
-### Current Status
+### Current Implementation
 
-**TBD - Requires Research**
+**Font-based rendering using Canvas**
+
+- Uses "Caveat" handwriting-style font
+- Renders text incrementally as LLM generates tokens
+- Adds slight randomization (rotation, spacing) for natural appearance
+- Outputs PNG images streamed to client
+- High contrast, e-ink compatible
+
+See `HANDWRITING_RENDERING_RESEARCH.md` for detailed research and future enhancement options.
 
 ### Requirements
 

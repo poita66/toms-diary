@@ -2,17 +2,27 @@
  * Type definitions for the application
  */
 
-export interface ImageData {
-  data: string;
-  metadata: {
-    timestamp: number;
-    width: number;
-    height: number;
-    format: string;
-  };
+export interface ImageMetadata {
+  timestamp: number;
+  width: number;
+  height: number;
+  format: 'png' | 'jpeg';
 }
 
-export interface RenderChunk {
+export interface ImageRequest {
+  type: 'image';
+  data: string;
+  metadata: ImageMetadata;
+}
+
+export interface PingRequest {
+  type: 'ping';
+}
+
+export type ClientToServerMessage = ImageRequest | PingRequest;
+
+export interface RenderChunkResponse {
+  type: 'render-chunk';
   data: string;
   metadata: {
     chunkIndex: number;
@@ -21,29 +31,51 @@ export interface RenderChunk {
   };
 }
 
-export interface WebSocketMessage {
-  type: string;
-  data?: string;
+export interface ProcessingResponse {
+  type: 'processing';
+  status: 'received' | 'processing' | 'complete';
   metadata?: Record<string, unknown>;
-  message?: string;
-  code?: string;
 }
 
-export interface ClientToServerMessage {
-  type: 'image';
-  data: string;
+export interface CompleteResponse {
+  type: 'complete';
   metadata: {
-    timestamp: number;
-    width: number;
-    height: number;
-    format: 'png' | 'jpeg';
+    sessionId: string;
+    duration: number;
   };
 }
 
-export interface ServerToClientMessage {
-  type: 'render-chunk' | 'complete' | 'error';
-  data?: string;
+export interface ErrorResponse {
+  type: 'error';
+  message: string;
+  code: ErrorCode;
   metadata?: Record<string, unknown>;
-  message?: string;
-  code?: string;
+}
+
+export type ServerToClientMessage =
+  | RenderChunkResponse
+  | ProcessingResponse
+  | CompleteResponse
+  | ErrorResponse;
+
+export type ErrorCode =
+  | 'INVALID_MESSAGE'
+  | 'INVALID_IMAGE'
+  | 'PROCESSING_FAILED'
+  | 'VLM_ERROR'
+  | 'SESSION_EXPIRED'
+  | 'RENDERER_ERROR'
+  | 'INTERNAL_ERROR';
+
+export interface SessionState {
+  sessionId: string;
+  createdAt: number;
+  lastActivity: number;
+  status: 'idle' | 'processing' | 'streaming' | 'error';
+  images: Array<{
+    timestamp: number;
+    size: number;
+    processed: boolean;
+  }>;
+  metadata?: Record<string, unknown>;
 }
