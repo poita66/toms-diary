@@ -43,7 +43,7 @@ export interface HandwritingRenderer {
 }
 
 const DEFAULT_FONT = 'Caveat';
-const DEFAULT_FONT_SIZE = 48;
+const DEFAULT_FONT_SIZE = 56;
 const DEFAULT_PADDING = 20;
 
 class HandwritingRendererImpl implements HandwritingRenderer {
@@ -79,7 +79,7 @@ class HandwritingRendererImpl implements HandwritingRenderer {
         backgroundColor = '#ffffff',
         textColor = '#000000',
         padding = DEFAULT_PADDING,
-        maxWidth = 800,
+        maxWidth = 900,
         addVariation = true,
       } = options;
 
@@ -151,7 +151,7 @@ class HandwritingRendererImpl implements HandwritingRenderer {
         backgroundColor = '#ffffff',
         textColor = '#000000',
         padding = DEFAULT_PADDING,
-        maxWidth = 800,
+        maxWidth = 900,
         addVariation = true,
       } = options;
 
