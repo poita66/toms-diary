@@ -23,7 +23,7 @@ See [Supernote Nomad Hardware Reference](../docs/supernote-nomad-hardware.md) fo
    - Real-time drawing with pressure-sensitive stylus
 
 2. **WebSocket Communication**
-   - Connect to backend service at `ws://localhost:8080`
+    - Connect to backend service at `ws://localhost:8080`
    - Send handwritten images as base64-encoded PNG
    - Receive streaming render chunks with handwriting responses
 
@@ -41,10 +41,32 @@ See [Supernote Nomad Hardware Reference](../docs/supernote-nomad-hardware.md) fo
 
 ### Prerequisites
 
-- Android Studio Hedgehog (2023.1.1) or later
-- Android SDK (API level 30+ for Android 11)
-- Java 17 or later
-- Gradle 8.2+
+- **Android Studio** Hedgehog (2023.1.1) or later
+- **Android SDK** (API level 30+ for Android 11)
+- **Java 17 JDK**: Required for building the project. Install from [Adoptium](https://adoptium.net/) or [Oracle](https://www.oracle.com/java/technologies/downloads/). Note: Java 21+ may have compatibility issues with Gradle 8.10.
+- **Gradle 8.2+**: The project includes a Gradle wrapper (`./gradlew`), so a system-wide Gradle installation is not required.
+- **JAVA_HOME environment variable**: Must be set to point to your Java 17 JDK installation directory.
+
+#### Setting JAVA_HOME
+
+**Linux/macOS** (add to `~/.bashrc`, `~/.bash_profile`, or `~/.zshrc`):
+```bash
+export JAVA_HOME=/path/to/jdk-17
+export PATH=$JAVA_HOME/bin:$PATH
+```
+
+**Windows** (System Properties → Environment Variables):
+```
+JAVA_HOME=C:\Program Files\Java\jdk-17
+```
+
+Verify installation:
+```bash
+$ java -version
+openjdk version "17.0.x"
+$ $JAVA_HOME/bin/java -version
+openjdk version "17.0.x"
+```
 
 ### Build Configuration
 
@@ -77,6 +99,9 @@ dependencies {
 ```bash
 # Clean and build debug APK
 ./gradlew clean assembleDebug
+
+# If JAVA_HOME is not set, you can specify it inline:
+# JAVA_HOME=/path/to/jdk-17 ./gradlew clean assembleDebug
 
 # Install on connected device
 ./gradlew installDebug
@@ -217,7 +242,7 @@ adb shell am start -n com.tomsdiary/.MainActivity
 The default server URL is hardcoded in `MainActivity.kt`:
 
 ```kotlin
-private val SERVER_URL = "ws://localhost:8080"
+    private val SERVER_URL = "ws://localhost:8080"
 ```
 
 Update this to match your backend server address.

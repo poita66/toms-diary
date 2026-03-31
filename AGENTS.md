@@ -33,28 +33,28 @@ npm run test:coverage  # with coverage
 
 ```bash
 # Full deploy cycle (build, install, start)
-cd android-app && JAVA_HOME=/tmp/jdk-17.0.9+9 ./gradlew assembleDebug && \
-adb -s YOUR_DEVICE_SERIAL install -r app/build/outputs/apk/debug/app-debug.apk && \
-adb -s YOUR_DEVICE_SERIAL shell am start -n com.tomsdiary/.MainActivity
+cd android-app && ./gradlew assembleDebug && \
+adb install -r app/build/outputs/apk/debug/app-debug.apk && \
+adb shell am start -n com.tomsdiary/.MainActivity
 
 # Or step by step:
-# Build (requires Java 17 - Java 26 incompatible with Gradle 8.10)
-cd android-app && JAVA_HOME=/tmp/jdk-17.0.9+9 ./gradlew assembleDebug
+# Build (requires Java 17 - Java 21+ may have issues with Gradle 8.10)
+cd android-app && ./gradlew assembleDebug
 
 # Install to device
-adb -s YOUR_DEVICE_SERIAL install -r app/build/outputs/apk/debug/app-debug.apk
+adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 # Start app
-adb -s YOUR_DEVICE_SERIAL shell am start -n com.tomsdiary/.MainActivity
+adb shell am start -n com.tomsdiary/.MainActivity
 
 # Run tests
 ./gradlew test
 ```
 
 ### Device Info
-- Supernote Nomad A6 X2 (YOUR_DEVICE_SERIAL)
+- Supernote Nomad A6 X2
 - Backend: localhost:8080 (exposed as 18080 via Docker)
-- vLLM: localhost:8001 (model: cyankiwi/Qwen3.5-27B-AWQ-4bit)
+- vLLM: localhost:8001
 - Screen: 1324x1752 pixels, line spacing 150px, first line Y=180px
 
 ### Docker (Backend)
@@ -216,7 +216,7 @@ LOG_LEVEL=info
 
 ### Android Server URL
 ```kotlin
-private val SERVER_URL = "ws://localhost:18080"
+    private val SERVER_URL = "ws://localhost:18080"
 ```
 
 ## vLLM Optimization
@@ -275,19 +275,18 @@ describe('Feature Name', () => {
 4. **Add new message type**: Update `types/messages.ts`, add validator in `validation.ts`
 5. **Deploy backend**: 
    ```bash
-   rsync -avz ~/toms-diary/ peter@localhost:~/repos/toms-diary/
-   ssh peter@localhost "cd ~/repos/toms-diary/backend && docker compose up --build -d"
+    # Update with your deployment commands
    ```
 6. **Deploy Android app**:
    ```bash
    cd android-app && JAVA_HOME=/tmp/jdk-17.0.9+9 ./gradlew assembleDebug
-   adb -s YOUR_DEVICE_SERIAL install -r app/build/outputs/apk/debug/app-debug.apk
-   adb -s YOUR_DEVICE_SERIAL shell am start -n com.tomsdiary/.MainActivity
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb shell am start -n com.tomsdiary/.MainActivity
    ```
 
 ## Known Constraints
 
-- Android build requires Java 17 (Gradle 8.10 incompatibility with Java 26)
+- Android build requires Java 17 (Gradle 8.10 incompatibility with Java 21+)
 - Backend uses ES modules (`.js` import extensions required)
 - Font rendering uses Caveat font from `/fonts/static/Caveat-Regular.ttf`
 - Screen width sent from client excludes 80px padding (40px each side)
