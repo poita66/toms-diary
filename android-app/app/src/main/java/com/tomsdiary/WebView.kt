@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
 import android.util.AttributeSet
@@ -31,10 +32,15 @@ class WebView @JvmOverloads constructor(
     private var currentColor = Color.BLACK
     private var isDrawing = false
 
+    private var bitmapToDraw: Bitmap? = null
+    private var bitmapMatrix: Matrix? = null
+    private var bitmapPaint: Paint? = null
+
     fun clear() {
         paths.clear()
         pathColors.clear()
         currentPath = Path()
+        bitmapToDraw = null
         invalidate()
     }
 
@@ -50,6 +56,13 @@ class WebView @JvmOverloads constructor(
             paint.color = pathColors[index]
             canvas.drawPath(path, paint)
         }
+    }
+
+    fun drawBitmap(bitmap: Bitmap, matrix: Matrix, paint: Paint) {
+        bitmapToDraw = bitmap
+        bitmapMatrix = matrix
+        bitmapPaint = paint
+        invalidate()
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -92,11 +105,9 @@ class WebView @JvmOverloads constructor(
             paint.color = currentColor
             canvas.drawPath(currentPath, paint)
         }
-    }
 
-    fun drawBitmap(bitmap: android.graphics.Bitmap, matrix: android.graphics.Matrix, paint: android.graphics.Paint) {
-        val canvas = Canvas(this)
-        canvas.drawBitmap(bitmap, matrix, paint)
-        invalidate()
+        if (bitmapToDraw != null && bitmapMatrix != null && bitmapPaint != null) {
+            canvas.drawBitmap(bitmapToDraw!!, bitmapMatrix!!, bitmapPaint!!)
+        }
     }
 }

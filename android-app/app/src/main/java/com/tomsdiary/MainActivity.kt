@@ -5,7 +5,6 @@ import android.graphics.Color
 import android.graphics.Matrix
 import android.os.Bundle
 import android.util.Base64
-import android.view.View
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
@@ -22,7 +21,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
 
     private var webSocketClient: WebSocketClient? = null
-    private var scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var isConnected = false
     private var isProcessing = false
 
@@ -71,7 +70,7 @@ class MainActivity : AppCompatActivity() {
             try {
                 webSocketClient = WebSocketClient(SERVER_URL, object : WebSocketClient.WebSocketListener {
                     override fun onOpen() {
-                        withContext(Dispatchers.Main) {
+                        scope.launch {
                             isConnected = true
                             updateConnectionState(true)
                             Toast.makeText(this@MainActivity, "Connected", Toast.LENGTH_SHORT).show()
@@ -79,7 +78,7 @@ class MainActivity : AppCompatActivity() {
                     }
 
                     override fun onClose(code: Int, reason: String, remote: Boolean) {
-                        withContext(Dispatchers.Main) {
+                        scope.launch {
                             isConnected = false
                             updateConnectionState(false)
                             Toast.makeText(this@MainActivity, "Disconnected: $reason", Toast.LENGTH_SHORT).show()
@@ -87,22 +86,20 @@ class MainActivity : AppCompatActivity() {
                     }
 
                     override fun onError(ex: Exception) {
-                        withContext(Dispatchers.Main) {
+                        scope.launch {
                             Toast.makeText(this@MainActivity, "Error: ${ex.message}", Toast.LENGTH_SHORT).show()
                         }
                     }
 
                     override fun onRenderChunk(data: String, metadata: com.google.gson.JsonObject?) {
-                        withContext(Dispatchers.Main) {
-                            if (!isProcessing) return@withContext
-                            
-                            val base64Data = data
-                            displayRenderedImage(base64Data)
+                        scope.launch {
+                            if (!isProcessing) return@launch
+                            displayRenderedImage(data)
                         }
                     }
 
                     override fun onComplete() {
-                        withContext(Dispatchers.Main) {
+                        scope.launch {
                             isProcessing = false
                             btnSend.isEnabled = true
                             statusText.text = "Response complete"
@@ -114,7 +111,7 @@ class MainActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 isConnected = false
                 updateConnectionState(false)
-                Toast.makeText(this, "Connection failed: ${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(this@MainActivity, "Connection failed: ${e.message}", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -194,27 +191,27 @@ class MainActivity : AppCompatActivity() {
             
             val scaledBitmap = scaleBitmapToFit(bitmap)
             
-                canvasView.post {
-                    canvasView.clear()
-                    
-                    val matrix = Matrix()
-                    val canvasWidth = canvasView.width.toFloat()
-                    val canvasHeight = canvasView.height.toFloat()
-                    val bitmapWidth = scaledBitmap.width.toFloat()
-                    val bitmapHeight = scaledBitmap.height.toFloat()
-                    
-                    val scaleX = canvasWidth / bitmapWidth
-                    val scaleY = canvasHeight / bitmapHeight
-                    val scale = minOf(scaleX, scaleY)
-                    
-                    val translationX = (canvasWidth - bitmapWidth * scale) / 2
-                    val translationY = (canvasHeight - bitmapHeight * scale) / 2
-                    
-                    matrix.postScale(scale, scale)
-                    matrix.postTranslate(translationX, translationY)
-                    
-                    canvasView.drawBitmap(scaledBitmap, matrix, android.graphics.Paint().apply { isAntiAlias = true })
-                }
+            canvasView.post {
+                canvasView.clear()
+                
+                val matrix = Matrix()
+                val canvasWidth = canvasView.width.toFloat()
+                val canvasHeight = canvasView.height.toFloat()
+                val bitmapWidth = scaledBitmap.width.toFloat()
+                val bitmapHeight = scaledBitmap.height.toFloat()
+                
+                val scaleX = canvasWidth / bitmapWidth
+                val scaleY = canvasHeight / bitmapHeight
+                val scale = minOf(scaleX, scaleY)
+                
+                val translationX = (canvasWidth - bitmapWidth * scale) / 2
+                val translationY = (canvasHeight - bitmapHeight * scale) / 2
+                
+                matrix.postScale(scale, scale)
+                matrix.postTranslate(translationX, translationY)
+                
+                canvasView.drawBitmap(scaledBitmap, matrix, android.graphics.Paint().apply { isAntiAlias = true })
+            }
         } catch (e: Exception) {
             Toast.makeText(this, "Failed to display: ${e.message}", Toast.LENGTH_SHORT).show()
         }

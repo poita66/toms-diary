@@ -38,7 +38,7 @@ class WebSocketClient(private val serverUri: String, private val listener: WebSo
             when (type) {
                 "render-chunk" -> {
                     val data = json.get("data")?.asString
-                    val metadata = json.get("metadata")
+                    val metadata = json.get("metadata") as? JsonObject
                     listener.onRenderChunk(data ?: "", metadata)
                 }
                 "complete" -> {
