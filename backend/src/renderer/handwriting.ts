@@ -33,18 +33,33 @@ export interface TextChunk {
   height: number;
 }
 
+export interface WordRenderResult {
+  base64: string;
+  width: number;
+  height: number;
+  x: number;
+  y: number;
+}
+
 export interface HandwritingRenderer {
   renderText(text: string, options?: RenderOptions): RenderResult;
   renderTextStream(
     text: string,
     options?: RenderOptions
   ): AsyncIterable<{ chunk: string; base64: string; progress: number }>;
+  renderWordStream(
+    text: string,
+    options?: RenderOptions
+  ): AsyncIterable<WordRenderResult>;
   wrapText(text: string, maxWidth: number, options?: RenderOptions): string[];
 }
 
 const DEFAULT_FONT = 'Caveat';
-const DEFAULT_FONT_SIZE = 56;
 const DEFAULT_PADDING = 20;
+
+function calculateFontSize(maxWidth: number): number {
+  return Math.floor(maxWidth / 20);
+}
 
 class HandwritingRendererImpl implements HandwritingRenderer {
   private canvas: Canvas | null = null;
@@ -75,7 +90,6 @@ class HandwritingRendererImpl implements HandwritingRenderer {
     try {
       const {
         fontFamily = DEFAULT_FONT,
-        fontSize = DEFAULT_FONT_SIZE,
         backgroundColor = '#ffffff',
         textColor = '#000000',
         padding = DEFAULT_PADDING,
@@ -83,10 +97,12 @@ class HandwritingRendererImpl implements HandwritingRenderer {
         addVariation = true,
       } = options;
 
+      const actualFontSize = options.fontSize ?? calculateFontSize(maxWidth);
+
       const cleanText = this.stripEmojis(text);
       const lines = this.wrapText(cleanText, maxWidth, options);
 
-      const lineHeight = fontSize * 1.5;
+      const lineHeight = actualFontSize * 1.5;
       const canvas = createCanvas(maxWidth, lines.length * lineHeight + padding * 2);
       const ctx = canvas.getContext('2d');
 
@@ -94,10 +110,10 @@ class HandwritingRendererImpl implements HandwritingRenderer {
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       ctx.fillStyle = textColor;
-      ctx.font = `${fontSize}px ${fontFamily}`;
+      ctx.font = `${actualFontSize}px ${fontFamily}`;
       ctx.textBaseline = 'alphabetic';
 
-      let y = padding + fontSize;
+      let y = padding + actualFontSize;
 
       for (const line of lines) {
         if (addVariation) {
@@ -147,13 +163,14 @@ class HandwritingRendererImpl implements HandwritingRenderer {
     try {
       const {
         fontFamily = DEFAULT_FONT,
-        fontSize = DEFAULT_FONT_SIZE,
         backgroundColor = '#ffffff',
         textColor = '#000000',
         padding = DEFAULT_PADDING,
         maxWidth = 900,
         addVariation = true,
       } = options;
+
+      const fontSize = options.fontSize ?? calculateFontSize(maxWidth);
 
       const words = text.split(' ');
       const totalWords = words.length;
@@ -188,8 +205,122 @@ class HandwritingRendererImpl implements HandwritingRenderer {
     }
   }
 
+  async *renderWordStream(
+    text: string,
+    options: RenderOptions = {}
+  ): AsyncIterable<WordRenderResult> {
+    const timer = logger.startTimer('render-word-stream');
+
+    try {
+      const {
+        fontFamily = DEFAULT_FONT,
+        backgroundColor = '#ffffff',
+        textColor = '#000000',
+        padding = DEFAULT_PADDING,
+        maxWidth = 900,
+        addVariation = true,
+      } = options;
+
+      // Validate maxWidth to prevent canvas size errors
+      const validatedMaxWidth = Math.min(maxWidth, 32767);
+      if (validatedMaxWidth !== maxWidth) {
+        logger.warn(undefined, 'maxWidth exceeded canvas limit, clamping', { original: maxWidth, clamped: validatedMaxWidth });
+      }
+
+      const fontSize = options.fontSize ?? calculateFontSize(validatedMaxWidth);
+
+      const canvas = createCanvas(validatedMaxWidth, 200);
+      const ctx = canvas.getContext('2d');
+      ctx.font = `${fontSize}px ${fontFamily}`;
+
+      const words = text.split(' ');
+      let currentX = padding;
+      let currentY = padding + fontSize;
+      const lineHeight = fontSize * 1.5;
+
+       for (const word of words) {
+        const wordWidth = ctx.measureText(word).width;
+        const wordHeight = fontSize;
+
+        const wordCtx = createCanvas(1, 1).getContext('2d');
+        wordCtx.font = `${fontSize}px ${fontFamily}`;
+        const textMetrics = wordCtx.measureText(word);
+        
+        const actualWidth = textMetrics.width;
+        
+        // Italic fonts extend beyond measured width due to slant
+        // Caveat has ~12 degree italic angle, so add fixed extra width
+        const leftPadding = 15;
+        const rightPadding = 30; // Fixed padding for consistent spacing
+        const topPadding = 10;
+        const bottomPadding = 25; // Extra bottom padding for descenders (g, y, p, q, j)
+        
+        const canvasWidth = actualWidth + leftPadding + rightPadding;
+        const canvasHeight = wordHeight + topPadding + bottomPadding;
+        
+        logger.info(undefined, `Word render: "${word}"`, {
+          actualWidth,
+          leftPadding,
+          rightPadding,
+          canvasWidth,
+          canvasHeight,
+          fontSize
+        });
+        
+        const wordCanvas = createCanvas(canvasWidth, canvasHeight);
+        const drawCtx = wordCanvas.getContext('2d');
+
+        drawCtx.fillStyle = backgroundColor;
+        drawCtx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+        drawCtx.fillStyle = textColor;
+        drawCtx.font = `${fontSize}px ${fontFamily}`;
+        drawCtx.textBaseline = 'alphabetic';
+
+        const x = leftPadding;
+        const y = topPadding + wordHeight;
+
+        if (addVariation) {
+          const rotation = (Math.random() - 0.5) * 0.02;
+          const xOffset = (Math.random() - 0.5) * 2;
+
+          drawCtx.save();
+          drawCtx.translate(x + xOffset, y);
+          drawCtx.rotate(rotation);
+          drawCtx.fillText(word, 0, 0);
+          drawCtx.restore();
+        } else {
+          drawCtx.fillText(word, x, y);
+        }
+
+        const base64 = wordCanvas.toDataURL('image/png').substring(22);
+
+        yield {
+          base64,
+          width: wordCanvas.width,
+          height: wordCanvas.height,
+          x: currentX,
+          y: currentY,
+        };
+
+        currentX += wordWidth + 10;
+
+        if (currentX + wordWidth > validatedMaxWidth - padding) {
+          currentX = padding;
+          currentY += lineHeight;
+        }
+      }
+    } catch (error) {
+      logger.error(undefined, 'Word stream rendering failed', error as Error);
+      throw error;
+    } finally {
+      timer.end();
+    }
+  }
+
   wrapText(text: string, maxWidth: number, options: RenderOptions = {}): string[] {
-    const { fontFamily = DEFAULT_FONT, fontSize = DEFAULT_FONT_SIZE } = options;
+    const fontFamily = options.fontFamily ?? DEFAULT_FONT;
+    const fontSize = options.fontSize ?? calculateFontSize(maxWidth);
 
     const canvas = createCanvas(maxWidth, 200);
     const ctx = canvas.getContext('2d');

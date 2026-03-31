@@ -36,3 +36,26 @@ No idea - needs research. Ideally it'd render the words as the LLM spits them ou
 
 Should it try to copy the user's handwriting? Would that be odd?
 
+## Bugs
+
+- Early requests aren't properly cancelled - so the answer might not match the image
+- Send button works on the response
+- Cannot cancel a send
+- Reconnection retries are too often
+- Writing is still laggy (not bad, but laggy)
+
+## Features
+
+- **New Conversation**: "New" button starts a fresh conversation
+- **Swipe Navigation**: Swipe left/right to navigate through conversation history
+- **Immutable History**: Historical pages are read-only (can't write on them)
+- **Touch to Clear**: Tap anywhere on response text to clear and start fresh
+- **Stylus to Clear**: Pen down on response also clears and navigates to newest page
+
+## TODO
+
+- Settings:
+  - Auto-send toggle
+  - Auto-send timeout
+  - Server URL
+- Conversation branching - allow forking from any point in conversation history

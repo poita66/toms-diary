@@ -92,6 +92,8 @@ function handleClientMessage(sessionId: string, ws: WebSocket, data: Buffer): vo
       handleImageMessage(sessionId, ws, message);
     } else if (isPingRequest(message)) {
       handlePingMessage(sessionId, ws);
+    } else if ((message as { type: string }).type === 'cancel') {
+      handleCancelMessage(sessionId, ws);
     } else {
       logger.warn(sessionId, 'Unknown message type', { type: (message as { type: string }).type });
     }
@@ -109,10 +111,12 @@ function handleImageMessage(sessionId: string, ws: WebSocket, message: ClientToS
   }
 
   const activeSession = activeSessions.get(sessionId);
-  if (activeSession?.cancelToken) {
-    logger.warn(sessionId, 'Session cancelled, ignoring image');
+  if (!activeSession) {
+    logger.error(sessionId, 'Session not found');
     return;
   }
+
+  activeSession.cancelToken = false;
 
   logger.info(sessionId, 'Image received', {
     width: message.metadata.width,
@@ -138,7 +142,11 @@ function handleImageMessage(sessionId: string, ws: WebSocket, message: ClientToS
   const chunkIndex = { current: 0 };
   let accumulatedText = '';
 
-  const screenWidth = message.metadata.width || 1000;
+  const screenWidth = message.metadata.screenWidth || message.metadata.width || 1000;
+  const persona = message.metadata.persona || 'tom';
+  const history = message.history || [];
+  
+  logger.info(sessionId, 'Starting stream', { historyLength: history.length });
   
   streamCoordinator.processAndStream(
     sessionId,
@@ -149,11 +157,37 @@ function handleImageMessage(sessionId: string, ws: WebSocket, message: ClientToS
 
       accumulatedText += token;
       logger.debug(sessionId, 'Token received', { length: token.length });
+      
+      try {
+        const tokenMessage = {
+          type: 'token' as const,
+          data: token,
+        };
+        ws.send(JSON.stringify(tokenMessage));
+      } catch (sendError) {
+        logger.error(sessionId, 'Failed to send token', sendError as Error);
+      }
     },
     (base64: string, progress: number) => {
       if (activeSession?.cancelToken || ws.readyState !== WebSocket.OPEN) return;
 
       try {
+        // First empty chunk is the clear signal - send as empty render-chunk
+        if (base64 === '' && progress === 0) {
+          const clearMessage = {
+            type: 'render-chunk' as const,
+            data: '',
+            metadata: {
+              chunkIndex: -1,
+              totalChunks: 1,
+              progress: 0,
+            },
+          };
+          ws.send(JSON.stringify(clearMessage));
+          logger.debug(sessionId, 'Clear signal sent as empty render-chunk');
+          return;
+        }
+
         const renderMessage = {
           type: 'render-chunk' as const,
           data: base64,
@@ -203,7 +237,10 @@ function handleImageMessage(sessionId: string, ws: WebSocket, message: ClientToS
       } catch (sendError) {
         logger.error(sessionId, 'Failed to send error', sendError as Error);
       }
-    }
+    },
+    persona,
+    history,
+    () => activeSession?.cancelToken || false
   );
 }
 
@@ -237,5 +274,15 @@ function sendProcessingStatus(ws: WebSocket, sessionId: string, status: 'receive
     logger.debug(sessionId, 'Processing status sent', { status });
   } catch (error) {
     logger.error(sessionId, 'Failed to send processing status', error as Error);
+  }
+}
+
+function handleCancelMessage(sessionId: string, ws: WebSocket): void {
+  logger.info(sessionId, 'Cancel received');
+  
+  const activeSession = activeSessions.get(sessionId);
+  if (activeSession) {
+    activeSession.cancelToken = true;
+    logger.info(sessionId, 'Session cancelled');
   }
 }

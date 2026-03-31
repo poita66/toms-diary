@@ -4,6 +4,7 @@ import type {
   ServerToClientMessage,
   ImageRequest,
   PingRequest,
+  CancelRequest,
   RenderChunkResponse,
   ProcessingResponse,
   CompleteResponse,
@@ -18,19 +19,30 @@ export const ImageMetadataSchema = z.object({
   format: z.enum(['png', 'jpeg']),
 });
 
+export const ConversationTurnSchema = z.object({
+  user: z.string(),
+  assistant: z.string(),
+});
+
 export const ImageRequestSchema = z.object({
   type: z.literal('image'),
   data: z.string().min(1, 'Image data is required'),
   metadata: ImageMetadataSchema,
+  history: z.array(ConversationTurnSchema).optional(),
 });
 
 export const PingRequestSchema = z.object({
   type: z.literal('ping'),
 });
 
+export const CancelRequestSchema = z.object({
+  type: z.literal('cancel'),
+});
+
 export const ClientMessageSchema = z.discriminatedUnion('type', [
   ImageRequestSchema,
   PingRequestSchema,
+  CancelRequestSchema,
 ]);
 
 export const RenderChunkResponseSchema = z.object({
@@ -81,7 +93,7 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
 
 export function validateClientMessage(
   data: unknown
-): { success: true; data: ImageRequest | PingRequest } | { success: false; error: z.ZodError } {
+): { success: true; data: ImageRequest | PingRequest | CancelRequest } | { success: false; error: z.ZodError } {
   const result = ClientMessageSchema.safeParse(data);
   if (!result.success) {
     return { success: false, error: result.error };
@@ -105,6 +117,10 @@ export function isImageRequest(msg: ClientToServerMessage): msg is ImageRequest 
 
 export function isPingRequest(msg: ClientToServerMessage): msg is PingRequest {
   return msg.type === 'ping';
+}
+
+export function isCancelRequest(msg: ClientToServerMessage): msg is CancelRequest {
+  return msg.type === 'cancel';
 }
 
 export function isValidErrorCode(code: unknown): code is ErrorCode {

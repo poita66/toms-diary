@@ -6,7 +6,7 @@
     android:layout_height="match_parent"
     android:background="@android:color/white">
 
-    <com.tomsdiary.WebView
+    <com.tomsdiary.DrawingView
         android:id="@+id/canvasView"
         android:layout_width="0dp"
         android:layout_height="0dp"
@@ -40,6 +40,20 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="Send" />
+
+        <Button
+            android:id="@+id/btnNewChat"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="New" />
+
+        <Button
+            android:id="@+id/btnSettings"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="⚙" />
 
         <Button
             android:id="@+id/btnConnect"

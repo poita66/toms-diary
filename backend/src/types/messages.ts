@@ -2,24 +2,36 @@
  * Type definitions for the application
  */
 
+export interface ConversationTurn {
+  user: string;
+  assistant: string;
+}
+
 export interface ImageMetadata {
   timestamp: number;
   width: number;
   height: number;
   format: 'png' | 'jpeg';
+  persona?: string;
+  screenWidth?: number;
 }
 
 export interface ImageRequest {
   type: 'image';
   data: string;
   metadata: ImageMetadata;
+  history?: ConversationTurn[];
 }
 
 export interface PingRequest {
   type: 'ping';
 }
 
-export type ClientToServerMessage = ImageRequest | PingRequest;
+export interface CancelRequest {
+  type: 'cancel';
+}
+
+export type ClientToServerMessage = ImageRequest | PingRequest | CancelRequest;
 
 export interface RenderChunkResponse {
   type: 'render-chunk';
@@ -29,6 +41,10 @@ export interface RenderChunkResponse {
     totalChunks: number;
     progress: number;
   };
+}
+
+export interface ClearResponse {
+  type: 'clear';
 }
 
 export interface ProcessingResponse {
@@ -54,6 +70,7 @@ export interface ErrorResponse {
 
 export type ServerToClientMessage =
   | RenderChunkResponse
+  | ClearResponse
   | ProcessingResponse
   | CompleteResponse
   | ErrorResponse;

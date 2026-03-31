@@ -9,6 +9,7 @@ export interface Config {
   vllmModel: string;
   vllmApiKey: string | null;
   logLevel: string;
+  dumpImages: boolean;
 }
 
 export function loadConfig(): Config {
@@ -21,5 +22,6 @@ export function loadConfig(): Config {
     vllmModel: process.env.VLLM_MODEL || 'default',
     vllmApiKey: process.env.VLLM_API_KEY || null,
     logLevel: process.env.LOG_LEVEL || 'info',
+    dumpImages: process.env.DUMP_IMAGES === 'true',
   };
 }
