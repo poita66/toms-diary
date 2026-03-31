@@ -138,9 +138,12 @@ function handleImageMessage(sessionId: string, ws: WebSocket, message: ClientToS
   const chunkIndex = { current: 0 };
   let accumulatedText = '';
 
+  const screenWidth = message.metadata.width || 1000;
+  
   streamCoordinator.processAndStream(
     sessionId,
     message.data,
+    screenWidth,
     (token) => {
       if (activeSession?.cancelToken || ws.readyState !== WebSocket.OPEN) return;
 

@@ -6,6 +6,7 @@ export interface StreamCoordinator {
   processAndStream(
     sessionId: string,
     imageBase64: string,
+    screenWidth: number,
     onToken: (token: string) => void,
     onRenderChunk: (base64: string, progress: number) => void,
     onComplete: (duration: number) => void,
@@ -17,6 +18,7 @@ class StreamCoordinatorImpl implements StreamCoordinator {
   async processAndStream(
     sessionId: string,
     imageBase64: string,
+    screenWidth: number,
     onToken: (token: string) => void,
     onRenderChunk: (base64: string, progress: number) => void,
     onComplete: (duration: number) => void,
@@ -29,7 +31,6 @@ class StreamCoordinatorImpl implements StreamCoordinator {
       logger.info(sessionId, 'Starting stream coordination');
 
       let fullText = '';
-      let renderBuffer = '';
       const RENDER_THRESHOLD = 3;
 
       for await (const event of llmOrchestrator.processImageStream(sessionId, imageBase64)) {
@@ -38,16 +39,12 @@ class StreamCoordinatorImpl implements StreamCoordinator {
             if (!event.data) continue;
 
             fullText += event.data;
-            renderBuffer += event.data;
 
             onToken(event.data);
 
-            if (renderBuffer.split(' ').length >= RENDER_THRESHOLD) {
+            if (fullText.split(' ').length >= RENDER_THRESHOLD) {
               try {
-                const chunk = renderBuffer;
-                renderBuffer = '';
-
-                const result = handwritingRenderer.renderText(chunk);
+                const result = handwritingRenderer.renderText(fullText, { maxWidth: screenWidth - 40 });
 
                 onRenderChunk(result.base64, fullText.length / 200);
               } catch (renderError) {
@@ -60,9 +57,11 @@ class StreamCoordinatorImpl implements StreamCoordinator {
           case 'complete':
             const duration = Date.now() - startTime;
 
-            if (renderBuffer) {
+            if (fullText) {
               try {
-                const result = handwritingRenderer.renderText(renderBuffer);
+                logger.info(sessionId, 'Final render text', { text: fullText.substring(0, 100) + (fullText.length > 100 ? '...' : '') });
+                const result = handwritingRenderer.renderText(fullText, { maxWidth: screenWidth - 40 });
+                logger.info(sessionId, 'Final render result', { width: result.width, height: result.height });
                 onRenderChunk(result.base64, 1.0);
               } catch (renderError) {
                 logger.error(sessionId, 'Final render failed', renderError as Error);

@@ -66,6 +66,7 @@ class WebSocketClient(private val serverUri: String, private val listener: WebSo
             addProperty("timestamp", System.currentTimeMillis())
             addProperty("width", width)
             addProperty("height", height)
+            addProperty("format", "png")
         }
 
         val message = JsonObject().apply {
