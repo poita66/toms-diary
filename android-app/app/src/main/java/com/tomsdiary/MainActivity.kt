@@ -25,7 +25,7 @@ class MainActivity : AppCompatActivity() {
     private var isConnected = false
     private var isProcessing = false
 
-    private val SERVER_URL = "ws://localhost:8080"
+    private val SERVER_URL = "ws://localhost:18080"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -94,7 +94,11 @@ class MainActivity : AppCompatActivity() {
                     override fun onRenderChunk(data: String, metadata: com.google.gson.JsonObject?) {
                         scope.launch {
                             if (!isProcessing) return@launch
-                            displayRenderedImage(data)
+                            val bytes = Base64.decode(data, Base64.NO_WRAP)
+                            val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                            val scaledBitmap = scaleBitmapToFit(bitmap)
+                            android.util.Log.d("MainActivity", "onRenderChunk: bitmap ${bitmap.width}x${bitmap.height}")
+                            displayBitmap(scaledBitmap)
                         }
                     }
 
@@ -184,35 +188,24 @@ class MainActivity : AppCompatActivity() {
         return Base64.encodeToString(byteArray, Base64.NO_WRAP)
     }
 
-    private fun displayRenderedImage(base64Data: String) {
+    private fun displayBitmap(bitmap: Bitmap) {
         try {
-            val bytes = Base64.decode(base64Data, Base64.NO_WRAP)
-            val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            val matrix = Matrix()
+            val bitmapWidth = bitmap.width.toFloat()
+            val canvasWidth = canvasView.width.toFloat()
+            val scaleX = canvasWidth / bitmapWidth
             
-            val scaledBitmap = scaleBitmapToFit(bitmap)
+            val padding = 40f
+            val translationX = padding
+            val translationY = padding
             
-            canvasView.post {
-                canvasView.clear()
-                
-                val matrix = Matrix()
-                val canvasWidth = canvasView.width.toFloat()
-                val canvasHeight = canvasView.height.toFloat()
-                val bitmapWidth = scaledBitmap.width.toFloat()
-                val bitmapHeight = scaledBitmap.height.toFloat()
-                
-                val scaleX = canvasWidth / bitmapWidth
-                val scaleY = canvasHeight / bitmapHeight
-                val scale = minOf(scaleX, scaleY)
-                
-                val translationX = (canvasWidth - bitmapWidth * scale) / 2
-                val translationY = (canvasHeight - bitmapHeight * scale) / 2
-                
-                matrix.postScale(scale, scale)
-                matrix.postTranslate(translationX, translationY)
-                
-                canvasView.drawBitmap(scaledBitmap, matrix, android.graphics.Paint().apply { isAntiAlias = true })
-            }
+            matrix.postScale(scaleX, scaleX)
+            matrix.postTranslate(translationX, translationY)
+            
+            android.util.Log.d("MainActivity", "displayBitmap: ${bitmap.width}x${bitmap.height}, scale=$scaleX, pos=($translationX,$translationY)")
+            canvasView.updateBitmap(bitmap, matrix, android.graphics.Paint().apply { isAntiAlias = true })
         } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "Failed to display", e)
             Toast.makeText(this, "Failed to display: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }

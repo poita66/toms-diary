@@ -6,7 +6,7 @@
     android:layout_height="match_parent"
     android:background="@android:color/white">
 
-    <View
+    <com.tomsdiary.WebView
         android:id="@+id/canvasView"
         android:layout_width="0dp"
         android:layout_height="0dp"
