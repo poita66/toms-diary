@@ -14,6 +14,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import kotlinx.coroutines.*
 import java.io.ByteArrayOutputStream
+import java.util.concurrent.atomic.AtomicBoolean
 
 class MainActivity : AppCompatActivity() {
 
@@ -28,7 +29,7 @@ class MainActivity : AppCompatActivity() {
     private var webSocketClient: WebSocketClient? = null
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var isConnected = false
-    private var isProcessing = false
+    private val isProcessing = AtomicBoolean(false)
     private var autoReconnectEnabled = true
 
     private val SERVER_URL = "ws://localhost:18080"
@@ -216,7 +217,7 @@ class MainActivity : AppCompatActivity() {
 
                     override fun onRenderChunk(data: String, metadata: com.google.gson.JsonObject?) {
                         scope.launch {
-                            if (!isProcessing) return@launch
+                            if (!isProcessing.get()) return@launch
                             
                             // First empty chunk signals to clear the canvas
                             if (data.isEmpty()) {
@@ -270,7 +271,7 @@ class MainActivity : AppCompatActivity() {
                     override fun onComplete() {
                         android.util.Log.d("MainActivity", "onComplete() called")
                         scope.launch {
-                            isProcessing = false
+                            isProcessing.set(false)
                             btnSend.isEnabled = true
                             statusText.text = "Response complete"
                             android.util.Log.d("MainActivity", "Status set to: ${statusText.text}")
@@ -295,7 +296,7 @@ class MainActivity : AppCompatActivity() {
         reconnectJob?.cancel()
         webSocketClient?.disconnect()
         isConnected = false
-        isProcessing = false
+        isProcessing.set(false)
         updateConnectionState(false)
     }
 
@@ -312,7 +313,7 @@ class MainActivity : AppCompatActivity() {
         btnConnect.text = if (connected) "Disconnect" else "Connect"
         statusText.text = if (connected) "Connected" else "Disconnected"
         statusText.setTextColor(if (connected) Color.GREEN else Color.RED)
-        btnSend.isEnabled = connected && !isProcessing
+        btnSend.isEnabled = connected && !isProcessing.get()
     }
 
     private fun clearCanvas() {
@@ -323,10 +324,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun scheduleAutoSend() {
-        if (!isConnected || isProcessing) {
-            if (isProcessing) {
+        if (!isConnected || isProcessing.get()) {
+            if (isProcessing.get()) {
                 webSocketClient?.cancel()
-                isProcessing = false
+                isProcessing.set(false)
                 btnSend.isEnabled = true
                 statusText.text = "Request cancelled"
             }
@@ -361,17 +362,9 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // Double-check isProcessing after canceling auto-send
-        if (isProcessing) {
+        // Atomic compare-and-set to prevent race conditions
+        if (!isProcessing.compareAndSet(false, true)) {
             android.util.Log.d("MainActivity", "sendCanvasImage: already processing, ignoring")
-            return
-        }
-
-        // Atomic check-and-set
-        if (!isProcessing) {
-            isProcessing = true
-        } else {
-            android.util.Log.d("MainActivity", "sendCanvasImage: race condition detected, ignoring")
             return
         }
 
@@ -417,7 +410,7 @@ class MainActivity : AppCompatActivity() {
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    isProcessing = false
+                    isProcessing.set(false)
                     btnSend.isEnabled = true
                     statusText.text = "Error: ${e.message}"
                     Toast.makeText(this@MainActivity, "Failed to send: ${e.message}", Toast.LENGTH_LONG).show()

@@ -1,10 +1,9 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { llmClient } from '../llm/client.js';
 import { imageProcessor } from '../image/processor.js';
 import { handwritingRenderer } from '../renderer/handwriting.js';
 import { validateClientMessage } from '../utils/validation.js';
 import { sessionManager } from '../session/manager.js';
-import { WebSocketServer } from 'ws';
 
 describe('Backend Integration Tests', () => {
   describe('Image Processor', () => {
@@ -76,7 +75,7 @@ describe('Backend Integration Tests', () => {
   });
 
   describe('Session Manager', () => {
-    let mockWs: any;
+    let mockWs: { on: (event: string, cb: () => void) => void; readyState: number };
 
     beforeAll(() => {
       mockWs = {
@@ -86,7 +85,7 @@ describe('Backend Integration Tests', () => {
     });
 
     it('should create and retrieve session', () => {
-      const sessionId = sessionManager.createSession(mockWs as any);
+      const sessionId = sessionManager.createSession(mockWs as unknown as import('ws').WebSocket);
       const session = sessionManager.getSession(sessionId);
 
       expect(sessionId).toBeTruthy();
@@ -95,7 +94,7 @@ describe('Backend Integration Tests', () => {
     });
 
     it('should update session', () => {
-      const sessionId = sessionManager.createSession(mockWs as any);
+      const sessionId = sessionManager.createSession(mockWs as unknown as import('ws').WebSocket);
       const success = sessionManager.updateSession(sessionId, { status: 'processing' as const });
       const session = sessionManager.getSession(sessionId);
 
@@ -104,7 +103,7 @@ describe('Backend Integration Tests', () => {
     });
 
     it('should delete session', () => {
-      const sessionId = sessionManager.createSession(mockWs as any);
+      const sessionId = sessionManager.createSession(mockWs as unknown as import('ws').WebSocket);
       const success = sessionManager.deleteSession(sessionId);
       const session = sessionManager.getSession(sessionId);
 

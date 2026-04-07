@@ -4,7 +4,7 @@ import { logger } from '../utils/logger.js';
 import { sessionManager } from '../session/manager.js';
 import { errorHandler, createErrorContext } from '../middleware/errorHandler.js';
 import { streamCoordinator } from '../stream/coordinator.js';
-import type { ClientToServerMessage, SessionState } from '../types/messages.js';
+import type { ClientToServerMessage } from '../types/messages.js';
 
 interface ServerOptions {
   port: number;
@@ -277,7 +277,7 @@ function sendProcessingStatus(ws: WebSocket, sessionId: string, status: 'receive
   }
 }
 
-function handleCancelMessage(sessionId: string, ws: WebSocket): void {
+function handleCancelMessage(sessionId: string, _ws: WebSocket): void {
   logger.info(sessionId, 'Cancel received');
   
   const activeSession = activeSessions.get(sessionId);

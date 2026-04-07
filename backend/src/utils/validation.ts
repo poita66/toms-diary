@@ -5,10 +5,6 @@ import type {
   ImageRequest,
   PingRequest,
   CancelRequest,
-  RenderChunkResponse,
-  ProcessingResponse,
-  CompleteResponse,
-  ErrorResponse,
   ErrorCode,
 } from '../types/messages.js';
 

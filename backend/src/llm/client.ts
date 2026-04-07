@@ -2,9 +2,10 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import OpenAI from 'openai';
-import type { ChatCompletionMessageParam, ChatCompletionCreateParamsNonStreaming, ChatCompletionCreateParamsStreaming } from 'openai/resources/chat';
+import type { ChatCompletion, ChatCompletionChunk } from 'openai/resources/chat';
 import { logger } from '../utils/logger.js';
 import { loadConfig } from '../config.js';
+import type { LLMMessage, LLMChatOptions, LLMStreamOptions } from './types.js';
 
 const config = loadConfig();
 
@@ -21,8 +22,8 @@ export interface LLMStreamEvent {
 }
 
 export interface LLMClient {
-  chat(sessionId: string, messages: ChatCompletionMessageParam[]): Promise<LLMResponse>;
-  chatStream(sessionId: string, messages: ChatCompletionMessageParam[], timeoutMs?: number, onCancel?: () => boolean): AsyncIterable<LLMStreamEvent>;
+  chat(sessionId: string, messages: LLMMessage[]): Promise<LLMResponse>;
+  chatStream(sessionId: string, messages: LLMMessage[], timeoutMs?: number, onCancel?: () => boolean): AsyncIterable<LLMStreamEvent>;
 }
 
 class LLMClientImpl implements LLMClient {
@@ -45,7 +46,7 @@ class LLMClientImpl implements LLMClient {
 
   async chat(
     sessionId: string,
-    messages: ChatCompletionMessageParam[]
+    messages: LLMMessage[]
   ): Promise<LLMResponse> {
     const timer = logger.startTimer('llm-chat', sessionId);
     const startTime = Date.now();
@@ -56,15 +57,20 @@ class LLMClientImpl implements LLMClient {
         model: this.model,
       });
 
-      const response = await this.client.chat.completions.create({
-        model: this.model,
-        messages,
+      const chatOptions: LLMChatOptions = {
         max_completion_tokens: 16 * 1024,
         chat_template_kwargs: { enable_thinking: false },
         include_reasoning: false,
-      } as any);
+      };
 
-      const text = response.choices[0]?.message?.content || '';
+      const response = await this.client.chat.completions.create({
+        model: this.model,
+        messages,
+        ...chatOptions,
+      } as Parameters<typeof this.client.chat.completions.create>[0]);
+
+      const chatResponse = response as unknown as ChatCompletion;
+      const text = chatResponse.choices[0]?.message?.content || '';
       const duration = Date.now() - startTime;
 
       logger.info(sessionId, 'LLM response received', {
@@ -88,7 +94,7 @@ class LLMClientImpl implements LLMClient {
 
   async *chatStream(
     sessionId: string,
-    messages: ChatCompletionMessageParam[],
+    messages: LLMMessage[],
     timeoutMs: number = 120000,
     onCancel?: () => boolean
   ): AsyncIterable<LLMStreamEvent> {
@@ -102,7 +108,6 @@ class LLMClientImpl implements LLMClient {
       });
 
       const checkInterval = 500;
-      let stream: any;
       let isCancelled = false;
       let cancelInterval: NodeJS.Timeout | null = null;
 
@@ -118,67 +123,81 @@ class LLMClientImpl implements LLMClient {
       }
 
       try {
-        stream = await Promise.race([
+        const streamOptions: LLMStreamOptions = {
+          stream: true,
+          max_completion_tokens: 16 * 1024,
+          chat_template_kwargs: { enable_thinking: false },
+          include_reasoning: false,
+        };
+
+        const streamResponse = await Promise.race<
+          ReturnType<typeof this.client.chat.completions.create>
+          | Promise<never>
+        >([
           this.client.chat.completions.create({
             model: this.model,
             messages,
-            stream: true,
-            max_completion_tokens: 16 * 1024,
-            chat_template_kwargs: { enable_thinking: false },
-            include_reasoning: false,
-          } as any),
+            ...streamOptions,
+          } as Parameters<typeof this.client.chat.completions.create>[0]),
           new Promise<never>((_, reject) => {
             setTimeout(() => {
               reject(new Error(`LLM stream timeout after ${timeoutMs}ms`));
             }, timeoutMs);
           }),
         ]);
+
+        // Type guard to ensure we have a stream (check for [Symbol.asyncIterator])
+        if (!('next' in streamResponse)) {
+          throw new Error('Expected stream response');
+        }
+
+        const stream = streamResponse as unknown as AsyncGenerator<ChatCompletionChunk>;
+
+        if (isCancelled) {
+          logger.info(sessionId, 'Stream cancelled before starting');
+          return;
+        }
+
+        let fullText = '';
+        let chunkCount = 0;
+        const streamStartTime = Date.now();
+
+        for await (const chunk of stream) {
+          const elapsed = Date.now() - streamStartTime;
+          chunkCount++;
+
+          if (chunkCount === 1) {
+            logger.info(sessionId, 'First chunk received', { elapsed });
+          }
+
+          const token = chunk.choices[0]?.delta?.content || '';
+
+          if (token) {
+            fullText += token;
+            yield {
+              type: 'token',
+              data: token,
+            };
+          }
+        }
+
+        logger.info(sessionId, 'Stream loop completed', {
+          chunkCount,
+          totalElapsed: Date.now() - streamStartTime,
+        });
+
+        logger.info(sessionId, 'LLM stream completed', {
+          length: fullText.length,
+        });
+
+        yield {
+          type: 'complete',
+        };
       } finally {
         if (cancelInterval) {
           clearInterval(cancelInterval);
         }
       }
-
-      if (isCancelled) {
-        logger.info(sessionId, 'Stream cancelled before starting');
-        return;
-      }
-
-      let fullText = '';
-      let chunkCount = 0;
-      const streamStartTime = Date.now();
-
-      for await (const chunk of stream) {
-        const elapsed = Date.now() - streamStartTime;
-        chunkCount++;
-
-        if (chunkCount === 1) {
-          logger.info(sessionId, 'First chunk received', { elapsed });
-        }
-
-        const token = chunk.choices[0]?.delta?.content || '';
-
-        if (token) {
-          fullText += token;
-          yield {
-            type: 'token',
-            data: token,
-          };
-        }
-      }
-
-      logger.info(sessionId, 'Stream loop completed', {
-        chunkCount,
-        totalElapsed: Date.now() - streamStartTime,
-      });
-
-      logger.info(sessionId, 'LLM stream completed', {
-        length: fullText.length,
-      });
-
-      yield {
-        type: 'complete',
-      };
     } catch (error) {
       logger.error(sessionId, 'LLM stream failed', error as Error);
 

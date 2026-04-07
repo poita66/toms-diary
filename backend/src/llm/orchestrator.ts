@@ -1,8 +1,8 @@
 import { llmClient, type LLMStreamEvent } from './client.js';
-import { imageProcessor, type ProcessedImage } from '../image/processor.js';
+import { imageProcessor } from '../image/processor.js';
 import { logger } from '../utils/logger.js';
 import { dumpImage, shouldDumpImages } from '../utils/image-dumper.js';
-import type { ChatCompletionMessageParam } from 'openai/resources/chat';
+import type { LLMMessage, LLMMessageContentPart } from './types.js';
 
 export interface TranscriptionResult {
   text: string;
@@ -94,13 +94,13 @@ class LLMOrchestratorImpl implements LLMOrchestrator {
 
       const systemPrompt = PERSONAS[persona] || PERSONAS['tom'];
 
-      const messages = [
+      const messages: LLMMessage[] = [
         {
-          role: 'system' as const,
+          role: 'system',
           content: systemPrompt,
         },
         {
-          role: 'user' as const,
+          role: 'user',
           content: [
             {
               type: 'image_url',
@@ -118,7 +118,7 @@ class LLMOrchestratorImpl implements LLMOrchestrator {
       ];
 
       logger.debug(sessionId, 'Sending to LLM');
-      const response = await llmClient.chat(sessionId, messages as ChatCompletionMessageParam[]);
+      const response = await llmClient.chat(sessionId, messages);
       const duration = Date.now() - startTime;
 
       logger.info(sessionId, 'Orchestration completed', {
@@ -176,7 +176,7 @@ class LLMOrchestratorImpl implements LLMOrchestrator {
 
       const systemPrompt = PERSONAS[persona] || PERSONAS['tom'];
 
-      const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string | Array<{ type: string; image_url?: { url: string; detail?: string }; text?: string }> }> = [
+      const messages: LLMMessage[] = [
         {
           role: 'system',
           content: systemPrompt,
@@ -201,27 +201,29 @@ class LLMOrchestratorImpl implements LLMOrchestrator {
       }
 
       // Add current message
+      const currentMessageContent: LLMMessageContentPart[] = [
+        {
+          type: 'image_url',
+          image_url: {
+            url: `data:${processedImage.format === 'png' ? 'image/png' : 'image/jpeg'};base64,${processedImage.base64}`,
+            detail: 'low',
+          },
+        },
+        {
+          type: 'text',
+           text: 'Read this handwritten note. First output the exact transcription in this format: [TRANSCRIPTION]<exact text as written>[/TRANSCRIPTION]\n\nThen on a new line, respond to it in a warm, conversational way. CRITICAL: Keep your response VERY SHORT - 2-3 sentences maximum, no more than 50 words. It will be displayed on a small ePaper screen. IMPORTANT: Use proper punctuation throughout your response - include commas, periods, question marks, and apostrophes where grammatically appropriate.',
+        },
+      ];
+
       messages.push({
         role: 'user',
-        content: [
-          {
-            type: 'image_url',
-            image_url: {
-              url: `data:${processedImage.format === 'png' ? 'image/png' : 'image/jpeg'};base64,${processedImage.base64}`,
-              detail: 'low',
-            },
-          },
-          {
-            type: 'text',
-             text: 'Read this handwritten note. First output the exact transcription in this format: [TRANSCRIPTION]<exact text as written>[/TRANSCRIPTION]\n\nThen on a new line, respond to it in a warm, conversational way. CRITICAL: Keep your response VERY SHORT - 2-3 sentences maximum, no more than 50 words. It will be displayed on a small ePaper screen. IMPORTANT: Use proper punctuation throughout your response - include commas, periods, question marks, and apostrophes where grammatically appropriate.',
-          },
-        ],
+        content: currentMessageContent,
       });
 
         logger.info(sessionId, 'Starting LLM stream', { messageCount: messages.length });
 
         try {
-          for await (const event of llmClient.chatStream(sessionId, messages as ChatCompletionMessageParam[], 120000, onCancel)) {
+          for await (const event of llmClient.chatStream(sessionId, messages, 120000, onCancel)) {
             logger.debug(sessionId, 'LLM event received', { type: event.type });
             yield event;
           }
