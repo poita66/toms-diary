@@ -1,0 +1,58 @@
+name: Extract iOS SDK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  extract-sdk:
+    runs-on: macos-14
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install xtool
+        run: |
+          curl -L https://github.com/xtool-org/xtool/releases/download/1.16.1/xtool-x86_64.AppImage -o /tmp/xtool.AppImage
+          chmod +x /tmp/xtool.AppImage
+          sudo mv /tmp/xtool.AppImage /usr/local/bin/xtool
+          xtool --version
+
+      - name: Set up xtool
+        run: |
+          # xtool setup extracts the iOS SDK from Xcode
+          # This creates ~/.xtool/swift-sdks
+          xtool setup
+
+      - name: List extracted SDKs
+        run: |
+          echo "Extracted SDKs:"
+          ls -lh ~/.xtool/swift-sdks/
+
+      - name: Package iOS SDK
+        run: |
+          cd ~/.xtool
+          tar -czf ios-sdk.tar.gz swift-sdks/
+          echo "Package size:"
+          ls -lh ios-sdk.tar.gz
+
+      - name: Upload iOS SDK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-sdk
+          path: ~/.xtool/ios-sdk.tar.gz
+          retention-days: 30
+          compression-level: 6
+
+      - name: Upload to Release (optional)
+        if: github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ~/.xtool/ios-sdk.tar.gz
+          name: iOS SDK Extraction
+          tag_name: ios-sdk-${{ github.run_number }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
