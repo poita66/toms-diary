@@ -15,7 +15,8 @@ jobs:
 
       - name: Install xtool
         run: |
-          curl -L https://github.com/xtool-org/xtool/releases/download/1.16.1/xtool-x86_64.AppImage -o /tmp/xtool.AppImage
+          # GitHub Actions macOS runners are ARM64 (Apple Silicon)
+          curl -L https://github.com/xtool-org/xtool/releases/download/1.16.1/xtool-aarch64.AppImage -o /tmp/xtool.AppImage
           chmod +x /tmp/xtool.AppImage
           sudo mv /tmp/xtool.AppImage /usr/local/bin/xtool
           xtool --version
