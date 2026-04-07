@@ -1,3 +1,6 @@
+// DEPRECATED: This file is no longer used as the app now uses local rendering and direct OpenAI API calls.
+// Kept for reference only.
+
 package com.tomsdiary
 
 import com.google.gson.Gson

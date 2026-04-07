@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:fillViewport="true">
+
+<LinearLayout
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
@@ -12,13 +17,14 @@
         android:textSize="20sp"
         android:textStyle="bold"
         android:textAlignment="center"
-        android:layout_marginBottom="24dp" />
+        android:layout_marginBottom="8dp" />
 
     <RadioGroup
         android:id="@+id/personaGroup"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical">
+        android:orientation="vertical"
+        android:layout_marginBottom="24dp">
 
         <RadioButton
             android:id="@+id/personaTom"
@@ -41,11 +47,73 @@
 
     </RadioGroup>
 
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@android:color/darker_gray"
+        android:layout_marginVertical="16dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="LLM Settings"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:textAlignment="center"
+        android:layout_marginBottom="16dp" />
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="API Base URL"
+        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+        android:layout_marginBottom="12dp">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/etBaseUrl"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="textUri"
+            android:text="http://localhost:8001/v1" />
+
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="API Key (optional for local LLMs)"
+        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+        android:layout_marginBottom="12dp">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/etApiKey"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="textVisiblePassword"
+            android:text="placeholder" />
+
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Model Name"
+        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+        android:layout_marginBottom="24dp">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/etModel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="text"
+            android:text="default" />
+
+    </com.google.android.material.textfield.TextInputLayout>
+
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:layout_marginTop="24dp">
+        android:orientation="horizontal">
 
         <Button
             android:id="@+id/btnCancel"
@@ -66,3 +134,5 @@
     </LinearLayout>
 
 </LinearLayout>
+
+</ScrollView>

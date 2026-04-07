@@ -21,27 +21,21 @@ class MainActivity : AppCompatActivity() {
     private lateinit var canvasView: DrawingView
     private lateinit var btnClear: Button
     private lateinit var btnSend: Button
-    private lateinit var btnConnect: Button
     private lateinit var btnSettings: Button
     private lateinit var btnNewChat: Button
     private lateinit var statusText: TextView
 
-    private var webSocketClient: WebSocketClient? = null
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-    private var isConnected = false
     private val isProcessing = AtomicBoolean(false)
-    private var autoReconnectEnabled = true
+    
+    // LLM configuration loaded from preferences
+    private lateinit var openAIClient: OpenAIClient
+    private lateinit var handwritingRenderer: HandwritingRenderer
 
-    private val SERVER_URL = "ws://localhost:18080"
     private val AUTO_SEND_DELAY_MS = 2000L
     private var autoSendJob: Job? = null
-    private var reconnectJob: Job? = null
-    private val RECONNECT_DELAY_MS = 3000L
-    private var clearAfterResponseJob: Job? = null
-    private val CLEAR_AFTER_RESPONSE_DELAY_MS = 0L
 
     private var currentPersona = "tom"
-    private var pendingClear = false
     private lateinit var prefs: SharedPreferences
 
     private var currentHistoryIndex = -1
@@ -55,15 +49,23 @@ class MainActivity : AppCompatActivity() {
         prefs = getSharedPreferences("toms_diary", MODE_PRIVATE)
         loadHistory()
         
+        // Initialize local services with configuration from preferences
+        openAIClient = OpenAIClient(
+            baseUrl = LLMConfig.getBaseUrl(this),
+            apiKey = LLMConfig.getApiKey(this),
+            model = LLMConfig.getModel(this)
+        )
+        handwritingRenderer = HandwritingRenderer(this)
+        
         gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
             override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
                 if (e1 == null) return false
                 val swipeThreshold = 100f
-                if (e2.x - e1.x > swipeThreshold && Math.abs(velocityY) < velocityX) {
+                if (e2.x - e1.x > swipeThreshold && kotlin.math.abs(velocityY) < velocityX) {
                     navigateHistory(1)
                     return true
                 }
-                if (e1.x - e2.x > swipeThreshold && Math.abs(velocityY) < velocityX) {
+                if (e1.x - e2.x > swipeThreshold && kotlin.math.abs(velocityY) < velocityX) {
                     navigateHistory(-1)
                     return true
                 }
@@ -75,12 +77,8 @@ class MainActivity : AppCompatActivity() {
         setupListeners()
         setupGestureDetection()
         
-        // Auto-connect after a short delay to ensure UI is ready
-        scope.launch {
-            delay(500)
-            android.util.Log.d("MainActivity", "Auto-connecting to $SERVER_URL")
-            connect()
-        }
+        statusText.text = "Ready (local mode)"
+        statusText.setTextColor(Color.GREEN)
     }
 
     private var conversationHistory = mutableListOf<Pair<String, String>>()
@@ -92,10 +90,13 @@ class MainActivity : AppCompatActivity() {
         canvasView = findViewById(R.id.canvasView)
         btnClear = findViewById(R.id.btnClear)
         btnSend = findViewById(R.id.btnSend)
-        btnConnect = findViewById(R.id.btnConnect)
         btnSettings = findViewById(R.id.btnSettings)
         btnNewChat = findViewById(R.id.btnNewChat)
         statusText = findViewById(R.id.statusText)
+        
+        // Remove connect button - no longer needed in local mode
+        val btnConnect = findViewById<Button>(R.id.btnConnect)
+        btnConnect.visibility = Button.GONE
     }
 
     private fun setupListeners() {
@@ -107,24 +108,12 @@ class MainActivity : AppCompatActivity() {
             sendCanvasImage()
         }
 
-        btnConnect.setOnClickListener {
-            toggleConnection()
-        }
-
         btnSettings.setOnClickListener {
             showSettingsDialog()
         }
 
         btnNewChat.setOnClickListener {
             startNewConversation()
-        }
-    }
-
-    private fun toggleConnection() {
-        if (isConnected) {
-            disconnect()
-        } else {
-            connect()
         }
     }
 
@@ -159,7 +148,7 @@ class MainActivity : AppCompatActivity() {
         canvasView.clear()
         
         if (bitmap != null) {
-            val matrix = android.graphics.Matrix()
+            val matrix = Matrix()
             canvasView.updateBitmap(bitmap, matrix, android.graphics.Paint())
         }
 
@@ -184,157 +173,21 @@ class MainActivity : AppCompatActivity() {
         canvasView.resetWordPosition()
     }
 
-    private fun connect() {
-        scope.launch {
-            android.util.Log.d("MainActivity", "connect() called, isConnected=$isConnected")
-            try {
-                webSocketClient = WebSocketClient(SERVER_URL, object : WebSocketClient.WebSocketListener {
-                    override fun onOpen() {
-                        scope.launch {
-                            isConnected = true
-                            updateConnectionState(true)
-                            Toast.makeText(this@MainActivity, "Connected", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-
-                    override fun onClose(code: Int, reason: String, remote: Boolean) {
-                        scope.launch {
-                            isConnected = false
-                            updateConnectionState(false)
-                            Toast.makeText(this@MainActivity, "Disconnected: $reason", Toast.LENGTH_SHORT).show()
-                            
-                            if (autoReconnectEnabled) {
-                                scheduleReconnect()
-                            }
-                        }
-                    }
-
-                    override fun onError(ex: Exception) {
-                        scope.launch {
-                            Toast.makeText(this@MainActivity, "Error: ${ex.message}", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-
-                    override fun onRenderChunk(data: String, metadata: com.google.gson.JsonObject?) {
-                        scope.launch {
-                            if (!isProcessing.get()) return@launch
-                            
-                            // First empty chunk signals to clear the canvas
-                            if (data.isEmpty()) {
-                                pendingClear = true
-                                currentResponseText = ""
-                                android.util.Log.d("MainActivity", "Clear signal received, waiting for first word")
-                                return@launch
-                            }
-                            
-                            // Clear canvas before displaying first word (only once)
-                            if (pendingClear) {
-                                android.util.Log.d("MainActivity", "Clearing canvas and resetting position")
-                                canvasView.clear()
-                                canvasView.resetWordPosition()
-                                val (x, y) = canvasView.getNextWordPosition()
-                                android.util.Log.d("MainActivity", "Position after reset: x=$x, y=$y")
-                                pendingClear = false
-                            }
-                            
-                            val bytes = Base64.decode(data, Base64.NO_WRAP)
-                            val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                            android.util.Log.d("MainActivity", "onRenderChunk: word ${bitmap.width}x${bitmap.height}")
-                            displayWord(bitmap)
-                            
-                            // Cancel auto-clear while receiving words
-                            cancelClearAfterResponse()
-                        }
-                    }
-
-                    override fun onToken(token: String) {
-                        scope.launch {
-                            // Check if this is a transcription message (JSON)
-                            try {
-                                val json = com.google.gson.Gson().fromJson(token, com.google.gson.JsonObject::class.java)
-                                if (json.has("type") && json.get("type").asString == "transcription") {
-                                    currentTranscription = json.get("text").asString
-                                    android.util.Log.d("MainActivity", "Received transcription: ${currentTranscription.length} chars")
-                                    return@launch
-                                }
-                            } catch (e: Exception) {
-                                // Not JSON, it's a regular token
-                            }
-                            currentResponseText += token
-                        }
-                    }
-
-                    override fun onClear() {
-                        // No longer used - clear happens on first word
-                    }
-
-                    override fun onComplete() {
-                        android.util.Log.d("MainActivity", "onComplete() called")
-                        scope.launch {
-                            isProcessing.set(false)
-                            btnSend.isEnabled = true
-                            statusText.text = "Response complete"
-                            android.util.Log.d("MainActivity", "Status set to: ${statusText.text}")
-                            saveToHistory()
-                            scheduleClearAfterResponse()
-                        }
-                    }
-                })
-
-                webSocketClient?.connect()
-                android.util.Log.d("MainActivity", "Called webSocketClient.connect()")
-            } catch (e: Exception) {
-                isConnected = false
-                updateConnectionState(false)
-                Toast.makeText(this@MainActivity, "Connection failed: ${e.message}", Toast.LENGTH_LONG).show()
-            }
-        }
-    }
-
-    private fun disconnect() {
-        autoReconnectEnabled = false
-        reconnectJob?.cancel()
-        webSocketClient?.disconnect()
-        isConnected = false
-        isProcessing.set(false)
-        updateConnectionState(false)
-    }
-
-    private fun scheduleReconnect() {
-        reconnectJob = scope.launch {
-            delay(RECONNECT_DELAY_MS)
-            android.util.Log.d("MainActivity", "Auto-reconnecting...")
-            autoReconnectEnabled = true
-            connect()
-        }
-    }
-
-    private fun updateConnectionState(connected: Boolean) {
-        btnConnect.text = if (connected) "Disconnect" else "Connect"
-        statusText.text = if (connected) "Connected" else "Disconnected"
-        statusText.setTextColor(if (connected) Color.GREEN else Color.RED)
-        btnSend.isEnabled = connected && !isProcessing.get()
-    }
-
     private fun clearCanvas() {
-        cancelClearAfterResponse()
+        cancelAutoSend()
         canvasView.clear()
         canvasView.resetWordPosition()
-        cancelAutoSend()
     }
 
     fun scheduleAutoSend() {
-        if (!isConnected || isProcessing.get()) {
-            if (isProcessing.get()) {
-                webSocketClient?.cancel()
-                isProcessing.set(false)
-                btnSend.isEnabled = true
-                statusText.text = "Request cancelled"
-            }
+        if (isProcessing.get()) {
+            // Cancel current processing
+            isProcessing.set(false)
+            btnSend.isEnabled = true
+            statusText.text = "Request cancelled"
             return
         }
         cancelAutoSend()
-        cancelClearAfterResponse()
         autoSendJob = scope.launch {
             delay(AUTO_SEND_DELAY_MS)
             sendCanvasImage()
@@ -346,21 +199,8 @@ class MainActivity : AppCompatActivity() {
         autoSendJob = null
     }
 
-    private fun scheduleClearAfterResponse() {
-        // Don't auto-clear - wait for user to write or touch
-    }
-
-    private fun cancelClearAfterResponse() {
-        // No-op - no auto-clear
-    }
-
     private fun sendCanvasImage() {
         cancelAutoSend()
-
-        if (!isConnected) {
-            Toast.makeText(this, "Please connect first", Toast.LENGTH_SHORT).show()
-            return
-        }
 
         // Atomic compare-and-set to prevent race conditions
         if (!isProcessing.compareAndSet(false, true)) {
@@ -400,21 +240,126 @@ class MainActivity : AppCompatActivity() {
                 
                 android.util.Log.d("MainActivity", "Image sizes: cropped=${croppedBitmap.width}x${croppedBitmap.height}, base64 length=${base64Image.length}")
                 
-                // Send full screen width for font sizing, actual image dimensions
                 // Limit history to last 3 turns to reduce inference time
                 val historyToSend = conversationHistory.takeLast(3).toList()
-                webSocketClient?.sendImage(base64Image, fullBitmap.width, croppedBitmap.width, croppedBitmap.height, historyToSend, currentPersona)
                 
                 withContext(Dispatchers.Main) {
-                    statusText.text = "Waiting for response..."
+                    statusText.text = "Processing..."
                 }
+                
+                // Process locally with OpenAI API
+                processLocally(base64Image, fullBitmap.width, historyToSend)
+                
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     isProcessing.set(false)
                     btnSend.isEnabled = true
                     statusText.text = "Error: ${e.message}"
-                    Toast.makeText(this@MainActivity, "Failed to send: ${e.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this@MainActivity, "Failed: ${e.message}", Toast.LENGTH_LONG).show()
                 }
+            }
+        }
+    }
+
+    private fun processLocally(base64Image: String, screenWidth: Int, history: List<Pair<String, String>>) {
+        scope.launch(Dispatchers.IO) {
+            try {
+                val fontSize = handwritingRenderer.calculateFontSize(screenWidth)
+                android.util.Log.d("MainActivity", "Using font size: $fontSize for screen width: $screenWidth")
+                
+                var fullResponse = ""
+                var transcription = ""
+                var inTranscription = false
+                
+                for (chunk in openAIClient.chatStreamWithImage(
+                    sessionId = "local",
+                    imageBase64 = base64Image,
+                    history = history,
+                    persona = currentPersona,
+                    onCancel = { isProcessing.get() && btnSend.isEnabled }  // Check if user cancelled
+                )) {
+                    val token = chunk.token
+                    if (token != null) {
+                        fullResponse += token
+                        
+                        // Parse transcription if present
+                        if (token.contains("[TRANSCRIPTION]")) {
+                            inTranscription = true
+                        }
+                        if (inTranscription) {
+                            if (token.contains("[/TRANSCRIPTION]")) {
+                                inTranscription = false
+                            } else {
+                                transcription += token
+                            }
+                        }
+                        
+                        withContext(Dispatchers.Main) {
+                            statusText.text = "Writing..."
+                        }
+                    }
+                    
+                    if (chunk.isDone) {
+                        break
+                    }
+                }
+                
+                currentResponseText = fullResponse
+                currentTranscription = transcription
+                
+                android.util.Log.d("MainActivity", "Response received: ${fullResponse.length} chars, transcription: ${transcription.length} chars")
+                
+                withContext(Dispatchers.Main) {
+                    // Clear canvas and start rendering
+                    canvasView.clear()
+                    canvasView.resetWordPosition()
+                    
+                    // Extract the actual response (after transcription)
+                    val responseText = if (fullResponse.contains("[/TRANSCRIPTION]")) {
+                        fullResponse.substringAfter("[/TRANSCRIPTION]").trim()
+                    } else {
+                        fullResponse
+                    }
+                    
+                    android.util.Log.d("MainActivity", "Rendering response: $responseText")
+                    
+                    // Render words locally and stream them to the canvas
+                    renderResponseLocally(responseText, fontSize)
+                    
+                    isProcessing.set(false)
+                    btnSend.isEnabled = true
+                    statusText.text = "Response complete"
+                    saveToHistory()
+                }
+                
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    isProcessing.set(false)
+                    btnSend.isEnabled = true
+                    statusText.text = "Error: ${e.message}"
+                    Toast.makeText(this@MainActivity, "Processing failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+    
+    private fun renderResponseLocally(text: String, fontSize: Int) {
+        scope.launch(Dispatchers.Default) {
+            val options = HandwritingRenderer.RenderOptions(
+                fontSize = fontSize,
+                backgroundColor = Color.WHITE,
+                textColor = Color.BLACK,
+                padding = 20,
+                maxWidth = 900,
+                addVariation = true
+            )
+            
+            for (wordResult in handwritingRenderer.renderWordStream(text, 0, options)) {
+                withContext(Dispatchers.Main) {
+                    displayWord(wordResult.bitmap)
+                }
+                // Small delay for smooth streaming effect
+                delay(50)
             }
         }
     }
@@ -428,7 +373,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun bitmapToBase64(bitmap: Bitmap): String {
-        // Convert to greyscale (4-bit would be ideal but Android only supports 8-bit)
+        // Convert to greyscale
         val config = Bitmap.Config.ARGB_8888
         val greyscaleBitmap = Bitmap.createBitmap(bitmap.width, bitmap.height, config)
         val canvas = android.graphics.Canvas(greyscaleBitmap)
@@ -458,7 +403,6 @@ class MainActivity : AppCompatActivity() {
         try {
             val (x, y) = canvasView.getNextWordPosition()
             // Offset y upward by bitmap height so text baseline sits on the line
-            // Use descender offset (typically ~20% of height) instead of full height
             val descenderOffset = (bitmap.height * 0.2).toFloat()
             val adjustedY = y - descenderOffset
             canvasView.addWord(bitmap, x, adjustedY)
@@ -468,8 +412,6 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "Failed to display: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
-
-
 
     private fun saveToHistory() {
         if (currentTranscription.isNotEmpty()) {
@@ -510,6 +452,14 @@ class MainActivity : AppCompatActivity() {
         val personaGroup = dialogView.findViewById<android.widget.RadioGroup>(R.id.personaGroup)
         val btnCancel = dialogView.findViewById<Button>(R.id.btnCancel)
         val btnSave = dialogView.findViewById<Button>(R.id.btnSave)
+        val etBaseUrl = dialogView.findViewById<android.widget.EditText>(R.id.etBaseUrl)
+        val etApiKey = dialogView.findViewById<android.widget.EditText>(R.id.etApiKey)
+        val etModel = dialogView.findViewById<android.widget.EditText>(R.id.etModel)
+        
+        // Load current settings
+        etBaseUrl.setText(LLMConfig.getBaseUrl(this))
+        etApiKey.setText(LLMConfig.getApiKey(this))
+        etModel.setText(LLMConfig.getModel(this))
 
         val dialog = android.app.AlertDialog.Builder(this)
             .setTitle("Settings")
@@ -523,7 +473,29 @@ class MainActivity : AppCompatActivity() {
                 R.id.personaGeneric -> currentPersona = "generic"
                 R.id.personaFriendly -> currentPersona = "friendly"
             }
-            android.util.Log.d("MainActivity", "Persona set to: $currentPersona")
+            
+            // Save LLM settings
+            val baseUrl = etBaseUrl.text.toString().trim()
+            val apiKey = etApiKey.text.toString().trim()
+            val model = etModel.text.toString().trim()
+            
+            if (baseUrl.isNotEmpty()) {
+                LLMConfig.setBaseUrl(this, baseUrl)
+            }
+            LLMConfig.setApiKey(this, apiKey)
+            if (model.isNotEmpty()) {
+                LLMConfig.setModel(this, model)
+            }
+            
+            android.util.Log.d("MainActivity", "Settings saved: persona=$currentPersona, baseUrl=$baseUrl, model=$model")
+            
+            // Reinitialize OpenAI client with new settings
+            openAIClient = OpenAIClient(
+                baseUrl = LLMConfig.getBaseUrl(this),
+                apiKey = LLMConfig.getApiKey(this),
+                model = LLMConfig.getModel(this)
+            )
+            
             dialog.dismiss()
         }
 
@@ -533,8 +505,6 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         cancelAutoSend()
-        cancelClearAfterResponse()
         scope.cancel()
-        disconnect()
     }
 }

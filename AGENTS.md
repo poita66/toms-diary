@@ -3,31 +3,19 @@
 ## Project Overview
 
 AI-powered handwritten journal system with:
-- **Backend**: TypeScript/Node.js WebSocket server (port 8080, mapped to 18080 via Docker)
 - **Android App**: Kotlin for Supernote Nomad (Android 11+, minSdk 30)
-- **vLLM**: Vision language model at `http://localhost:8000/v1` (model: `default`)
+- **iOS App**: SwiftUI for iPad with Apple Pencil support (iOS 17+)
+- **Local Processing**: Direct OpenAI API calls with local handwriting rendering
+- **LLM Backend**: Any OpenAI-compatible API (vLLM, Ollama, etc.)
+
+### Key Changes (v2.0)
+- ✅ **No backend server required** - app calls LLM directly
+- ✅ **Local handwriting rendering** - uses Caveat font on device
+- ✅ **Flexible LLM support** - works with any OpenAI-compatible API
+- ✅ **Simplified deployment** - just the app + your LLM of choice
+- ✅ **Cross-platform** - Android and iOS apps with identical functionality
 
 ## Build & Test Commands
-
-### Backend (`/backend/`)
-
-```bash
-# Development
-npm run dev          # tsx watch src/index.ts
-
-# Build
-npm run build        # tsc
-
-# Lint & typecheck
-npm run lint         # eslint src --ext .ts
-npm run typecheck    # tsc --noEmit
-
-# Tests
-npm run test         # vitest (all tests)
-npm run test -- src/__tests__/integration.test.ts  # single test file
-npm run test -- -t "should validate"              # run tests matching pattern
-npm run test:coverage  # with coverage
-```
 
 ### Android App (`/android-app/`)
 
@@ -51,27 +39,101 @@ adb shell am start -n com.tomsdiary/.MainActivity
 ./gradlew test
 ```
 
-### Device Info
-- Supernote Nomad A6 X2
-- Backend: localhost:8080 (exposed as 18080 via Docker)
-- vLLM: localhost:8001
-- Screen: 1324x1752 pixels, line spacing 150px, first line Y=180px
-
-### Docker (Backend)
+### iOS App (`/ios-app/`)
 
 ```bash
-# Start
-docker compose up -d
+# Open in Xcode
+cd ios-app && open TomsDiary.xcodeproj
 
-# Stop
-docker compose down
+# Or use the build script
+# Build
+./build.sh build
 
-# Rebuild
-docker build --no-cache -t backend-toms-diary-backend . && docker compose up -d
+# Clean and build
+./build.sh clean && ./build.sh build
 
-# Logs
-docker logs toms-diary-backend --tail 50 --follow
+# Run on simulator
+./build.sh run
+
+# Run tests
+./build.sh test
 ```
+
+**iOS Build Requirements:**
+- Xcode 15.0+
+- iOS 17.0+ deployment target
+- iPad with Apple Pencil (for real device testing)
+
+**iOS Network Configuration:**
+When testing on a real iPad, update the LLM Base URL in app settings to use your computer's IP:
+```bash
+# Find your computer's IP
+# macOS
+ipconfig getifaddr en0
+
+# Linux
+hostname -I | awk '{print $1}'
+
+# Then in the app Settings, set Base URL to:
+http://YOUR_IP:8001/v1
+```
+
+```bash
+# Full deploy cycle (build, install, start)
+cd android-app && ./gradlew assembleDebug && \
+adb install -r app/build/outputs/apk/debug/app-debug.apk && \
+adb shell am start -n com.tomsdiary/.MainActivity
+
+# Or step by step:
+# Build (requires Java 17 - Java 21+ may have issues with Gradle 8.10)
+cd android-app && ./gradlew assembleDebug
+
+# Install to device
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+
+# Start app
+adb shell am start -n com.tomsdiary/.MainActivity
+
+# Run tests
+./gradlew test
+```
+
+### LLM Server (Required)
+
+Start your OpenAI-compatible LLM server before using the app:
+
+**vLLM:**
+```bash
+# For local testing (Android or iOS simulator)
+vllm serve --model your-model-name --port 8001
+
+# For iOS device testing (must allow external connections)
+vllm serve --model your-model-name --host 0.0.0.0 --port 8001
+```
+
+**Ollama:**
+```bash
+ollama serve  # Default port 11434
+# Then enable API mode or use a wrapper
+```
+
+**Test the connection:**
+```bash
+curl http://localhost:8001/v1/models
+```
+
+### Device Info
+
+**Android (Supernote Nomad A6 X2)**
+- LLM: localhost:8001 (vLLM) or localhost:11434 (Ollama)
+- Screen: 1324x1752 pixels, line spacing 150px, first line Y=180px
+
+**iOS (iPad)**
+- LLM: YOUR_IP:8001 (use computer's IP, not localhost when on device)
+- Apple Pencil support with pressure and tilt
+- iPad Pro 12.9" recommended for testing
+
+
 
 ## Code Style Guidelines
 
@@ -126,6 +188,82 @@ for await (const event of llmClient.chatStream(sessionId, messages)) {
 }
 ```
 
+### Swift (iOS)
+
+**Imports**: Group by standard library, then Apple frameworks, then third-party
+```swift
+import Foundation
+import UIKit
+import SwiftUI
+import Combine
+```
+
+**Naming**:
+- Files: PascalCase (`DrawingView.swift`, `OpenAIClient.swift`)
+- Classes/Structs: PascalCase (`MainViewModel`, `ConversationTurn`)
+- Functions/vars: camelCase (`sendCanvasImage`, `isProcessing`)
+- Constants: nested in `enum` or `struct` with `static let`
+- Private properties: prefix with `_` when appropriate
+
+**Async/Await**: Use `async/await` over closures. Use `AsyncThrowingStream` for streaming.
+```swift
+func chatStreamWithImage(imageBase64: String) async throws -> AsyncThrowingStream<String, Error> {
+    return AsyncThrowingStream { continuation in
+        // stream implementation
+    }
+}
+
+// Consuming streams
+for try await token in client.chatStreamWithImage(imageBase64: base64) {
+    process(token)
+}
+```
+
+**Null Safety**: Use optional types explicitly, `?` for safe calls, `??` for defaults
+```swift
+private var drawingView: DrawingView?
+drawingView?.clear()
+let width = image.size.width ?? 0
+```
+
+**UI Updates**: Use `@MainActor` for view models that interact with UI
+```swift
+@MainActor
+final class MainViewModel: ObservableObject {
+    @Published var statusText: String = "Ready"
+}
+```
+
+**Memory Management**: Use `weak` references to avoid retain cycles
+```swift
+weak var drawingView: DrawingView?
+```
+
+**Error Handling**: Use `do-catch` with specific error types
+```swift
+do {
+    let result = try await someAsyncOperation()
+} catch is URLError {
+    // Handle network error
+} catch {
+    // Handle other errors
+}
+```
+
+**Extensions**: Keep extensions focused and named
+```swift
+// MARK: - UITouch Extension
+extension UITouch {
+    var isFinger: Bool {
+        #if targetEnvironment(simulator)
+        return true
+        #else
+        return toolType == .finger
+        #endif
+    }
+}
+```
+
 ### Kotlin (Android)
 
 **Imports**: Group by standard library, Android, then third-party
@@ -172,66 +310,80 @@ scope.launch(Dispatchers.IO) {
 
 ## Architecture
 
-### Backend Structure
-```
-src/
-├── index.ts              # Entry point, loads config, starts WebSocket server
-├── config.ts             # Environment configuration (port, vLLM settings)
-├── server/
-│   └── websocket.ts      # WebSocket server, message routing
-├── stream/
-│   └── coordinator.ts    # Orchestrates LLM streaming + rendering
-├── renderer/
-│   └── handwriting.ts    # Canvas-based text rendering with Caveat font
-├── llm/
-│   ├── client.ts         # vLLM API client (uses chat_template_kwargs for Qwen3)
-│   └── orchestrator.ts   # Vision model prompt orchestration
-├── session/
-│   └── manager.ts        # Session state management
-├── utils/
-│   ├── logger.ts         # Structured logging with session tracking
-│   └── validation.ts     # Zod-based message validation
-└── __tests__/
-    └── integration.test.ts
-```
-
 ### Android Structure
 ```
 app/src/main/java/com/tomsdiary/
-├── MainActivity.kt       # Main activity, connection management, auto-send, image processing
-├── DrawingView.kt        # Custom drawing view for handwriting (replaced WebView.kt)
-└── WebSocketClient.kt    # WebSocket client with reconnection logic
+├── MainActivity.kt           # Main activity, LLM calls, local rendering coordination
+├── DrawingView.kt            # Custom drawing view for handwriting
+├── OpenAIClient.kt           # OpenAI API client (any compatible endpoint)
+├── HandwritingRenderer.kt    # Local canvas-based text rendering with Caveat font
+├── LLMConfig.kt              # Configuration management for LLM settings
+└── WebSocketClient.kt        # DEPRECATED - kept for reference only
+```
+
+### iOS Structure
+```
+ios-app/TomsDiary/
+├── App/
+│   └── TomsDiaryApp.swift      # App entry point
+├── Views/
+│   ├── ContentView.swift        # Main SwiftUI view
+│   ├── DrawingView.swift        # Custom UIView for handwriting
+│   └── SettingsView.swift       # LLM configuration
+├── ViewModels/
+│   └── MainViewModel.swift      # App logic coordinator
+├── Services/
+│   ├── OpenAIClient.swift       # OpenAI API client
+│   ├── HandwritingRenderer.swift # Text-to-handwriting rendering
+│   └── ImageProcessor.swift     # Image capture & processing
+├── Models/
+│   ├── LLMConfig.swift          # LLM configuration
+│   ├── Persona.swift            # Persona definitions
+│   └── Conversation.swift       # Conversation models
+└── Assets.xcassets/
+    └── Fonts/
+        └── Caveat-Regular.ttf   # Handwriting font
+```
+
+### Data Flow
+```
+1. User writes on canvas
+2. App captures & crops handwriting
+3. Image sent to LLM via OpenAI API
+4. LLM returns streaming tokens
+5. App renders tokens as handwriting locally
+6. Words displayed one-by-one on canvas
 ```
 
 ## Key Configuration
 
-### Backend Environment (`.env`)
-```
-VLLM_HOST=http://localhost:8001/v1
-VLLM_MODEL=default
-PORT=8080
-HOST=0.0.0.0
-LOG_LEVEL=info
-```
+### LLM Settings (in-app)
 
-### Android Server URL
-```kotlin
-    private val SERVER_URL = "ws://localhost:18080"
-```
+Accessed via the **Settings** button in the app:
+
+- **API Base URL**: `http://localhost:8001/v1` (default, vLLM)
+- **API Key**: `placeholder` (optional for local LLMs)
+- **Model Name**: `default` (or your specific model)
+
+### Android Server URL (deprecated)
+
+The app no longer connects to a WebSocket server. All processing is local.
+
+### Environment Variables (LLM Server)
+
+For vLLM or other LLM servers, configure according to their documentation.
 
 ## vLLM Optimization
 
 ### Disabling Reasoning for Fast Inference
-The Qwen3.5-27B model generates extensive reasoning tokens by default (~361 tokens, ~49s latency). To achieve fast responses (~0.24s, ~10 tokens), use:
+The Qwen3.5-27B model generates extensive reasoning tokens by default (~361 tokens, ~49s latency). To achieve fast responses (~0.24s, ~10 tokens), the app uses:
 
-```typescript
-// In client.ts - both streaming and non-streaming
-this.client.chat.completions.create({
-  model: this.model,
-  messages,
-  chat_template_kwargs: { enable_thinking: false },  // vLLM-specific, disables reasoning generation
-  include_reasoning: false,  // Don't return reasoning in response
-} as any);
+```kotlin
+// In OpenAIClient.kt
+put("chat_template_kwargs", JSONObject().apply {
+    put("enable_thinking", false)  // vLLM-specific, disables reasoning generation
+})
+put("include_reasoning", false)  // Don't return reasoning in response
 ```
 
 **Important findings:**
@@ -245,7 +397,7 @@ this.client.chat.completions.create({
 ### Image Processing
 - Images are greyscale PNGs
 - Images are cropped to handwriting bounds (no fixed scaling)
-- Use `detail: 'low'` in image_url to reduce token usage
+- Use `detail: 'low'` in image_url to reduce token usage (already configured)
 - Full resolution images work fine with `enable_thinking: false` optimization
 
 ## Testing Patterns
@@ -269,37 +421,62 @@ describe('Feature Name', () => {
 
 ## Common Tasks
 
-1. **Change font size**: Modify `calculateFontSize()` in `handwriting.ts`
-2. **Adjust auto-send delay**: Change `AUTO_SEND_DELAY_MS` in `MainActivity.kt`
-3. **Update server IP**: Change `SERVER_URL` in `MainActivity.kt` and rebuild app
-4. **Add new message type**: Update `types/messages.ts`, add validator in `validation.ts`
-5. **Deploy backend**: 
-   ```bash
-    # Update with your deployment commands
-   ```
+1. **Change LLM endpoint**: Open Settings in app → update API Base URL
+2. **Change model**: Open Settings in app → update Model Name
+3. **Change font size**: 
+   - Android: Modify `calculateFontSize()` in `HandwritingRenderer.kt`
+   - iOS: Modify `calculateFontSize(for:)` in `Services/HandwritingRenderer.swift`
+4. **Adjust auto-send delay**: 
+   - Android: Change `AUTO_SEND_DELAY_MS` in `MainActivity.kt`
+   - iOS: Change `autoSendDelay` in `ViewModels/MainViewModel.swift`
+5. **Add new persona**: 
+   - Android: Update `PERSONAS` map in `OpenAIClient.kt`
+   - iOS: Update `Persona` enum in `Models/Persona.swift`
 6. **Deploy Android app**:
    ```bash
    cd android-app && JAVA_HOME=/tmp/jdk-17.0.9+9 ./gradlew assembleDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-adb shell am start -n com.tomsdiary/.MainActivity
+   adb install -r app/build/outputs/apk/debug/app-debug.apk
+   adb shell am start -n com.tomsdiary/.MainActivity
+   ```
+7. **Build iOS app**:
+   ```bash
+   cd ios-app
+   open TomsDiary.xcodeproj  # Open in Xcode
+   # Or build from command line
+   ./build.sh build
+   ```
+8. **Start vLLM**:
+   ```bash
+   vllm serve --model your-model --port 8001
+   # For iOS device testing:
+   vllm serve --model your-model --host 0.0.0.0 --port 8001
    ```
 
 ## Known Constraints
 
+### General
 - Android build requires Java 17 (Gradle 8.10 incompatibility with Java 21+)
-- Backend uses ES modules (`.js` import extensions required)
-- Font rendering uses Caveat font from `/fonts/static/Caveat-Regular.ttf`
+- Font rendering uses Caveat font (included in both apps)
+- LLM timeout is 120 seconds
+- **Use `chat_template_kwargs: { enable_thinking: false }`** in LLM requests to disable reasoning entirely
+- **Only send current image to LLM, send history as text only** (vLLM is exponentially slower with multiple images)
+- **Images should be greyscale** for faster inference
+- **Use `detail: 'low'`** in image_url to reduce token usage
+
+### Android Specific
 - Screen width sent from client excludes 80px padding (40px each side)
 - Text wraps at `maxWidth - 20` to leave right margin
 - ePaper display has 500-1000ms refresh times - minimize invalidate() calls
 - **Use throttle (5ms) instead of debounce for pen strokes** to show mid-stroke
 - Font size should be 90px (60% of 150px line spacing) to prevent italic overflow
 - **Auto-clear is disabled** - canvas clears only when user writes
-- LLM timeout is 120 seconds
-- **Use `chat_template_kwargs: { enable_thinking: false }`** in LLM requests to disable reasoning entirely
-- **Only send current image to LLM, send history as text only** (vLLM is exponentially slower with multiple images)
-- **Images should be greyscale** for faster inference
-- **Use separate screenWidth vs image dimensions** - screenWidth for font sizing, image dimensions for the actual cropped image
 - **Prevent concurrent requests** - double-check `isProcessing` flag to avoid race conditions
 - **Images are cropped to handwriting bounds** - no fixed scaling, send full resolution
-- **Use `detail: 'low'`** in image_url to reduce token usage
+
+### iOS Specific
+- Requires Xcode 15.0+ and iOS 17.0+
+- Apple Pencil not available in Simulator - test on real device
+- Use computer's IP address (not localhost) when testing on real iPad
+- Font must be registered in `Info.plist` under `UIAppFonts`
+- Line spacing is 150pt (matching Android)
+- First line Y position is 180pt (matching Android)
