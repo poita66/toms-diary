@@ -30,9 +30,12 @@ jobs:
       - name: Package iOS SDK
         run: |
           IOS_SDK_PATH="${{ steps.sdk.outputs.ios_sdk_path }}"
+          # Resolve the symlink to get the actual SDK path
+          IOS_SDK_REAL=$(readlink -f "$IOS_SDK_PATH")
+          echo "Real SDK path: $IOS_SDK_REAL"
           cd /tmp
           # Create a tarball of the SDK
-          tar -czf ios-sdk.tar.gz -C "$(dirname "$IOS_SDK_PATH")" "$(basename "$IOS_SDK_PATH")"
+          tar -czf ios-sdk.tar.gz -C "$(dirname "$IOS_SDK_REAL")" "$(basename "$IOS_SDK_REAL")"
           echo "Package size:"
           ls -lh ios-sdk.tar.gz
 
@@ -43,14 +46,3 @@ jobs:
           path: /tmp/ios-sdk.tar.gz
           retention-days: 30
           compression-level: 0  # Already compressed
-
-      - name: Upload to Release
-        if: github.event_name == 'workflow_dispatch'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: /tmp/ios-sdk.tar.gz
-          name: iOS SDK Extraction
-          tag_name: ios-sdk-${{ github.run_number }}
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
