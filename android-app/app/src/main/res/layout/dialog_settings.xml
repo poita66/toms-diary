@@ -66,7 +66,6 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:hint="API Base URL"
-        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
         android:layout_marginBottom="12dp">
 
         <com.google.android.material.textfield.TextInputEditText
@@ -82,7 +81,6 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:hint="API Key (optional for local LLMs)"
-        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
         android:layout_marginBottom="12dp">
 
         <com.google.android.material.textfield.TextInputEditText
@@ -98,7 +96,6 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:hint="Model Name"
-        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
         android:layout_marginBottom="24dp">
 
         <com.google.android.material.textfield.TextInputEditText
@@ -120,8 +117,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Cancel"
-            style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
+            android:text="Cancel" />
 
         <Button
             android:id="@+id/btnSave"

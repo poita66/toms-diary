@@ -9,6 +9,7 @@ import android.util.Base64
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -24,6 +25,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnSettings: Button
     private lateinit var btnNewChat: Button
     private lateinit var statusText: TextView
+    private lateinit var checkboxAutoSend: CheckBox
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val isProcessing = AtomicBoolean(false)
@@ -35,6 +37,7 @@ class MainActivity : AppCompatActivity() {
 
     private val AUTO_SEND_DELAY_MS = 2000L
     private var autoSendJob: Job? = null
+    private var autoSendEnabled = true
 
     private var currentPersona = "tom"
     private lateinit var prefs: SharedPreferences
@@ -95,6 +98,12 @@ class MainActivity : AppCompatActivity() {
         btnSettings = findViewById(R.id.btnSettings)
         btnNewChat = findViewById(R.id.btnNewChat)
         statusText = findViewById(R.id.statusText)
+        checkboxAutoSend = findViewById(R.id.checkboxAutoSend)
+        
+        // Initialize auto-send state
+        autoSendEnabled = true
+        checkboxAutoSend.isChecked = true
+        updateSendButtonState()
         
         // Remove connect button - no longer needed in local mode
         val btnConnect = findViewById<Button>(R.id.btnConnect)
@@ -116,6 +125,12 @@ class MainActivity : AppCompatActivity() {
 
         btnNewChat.setOnClickListener {
             startNewConversation()
+        }
+
+        checkboxAutoSend.setOnCheckedChangeListener { _, isChecked ->
+            autoSendEnabled = isChecked
+            updateSendButtonState()
+            statusText.text = if (isChecked) "Auto-send enabled" else "Auto-send disabled"
         }
     }
 
@@ -175,6 +190,11 @@ class MainActivity : AppCompatActivity() {
         canvasView.resetWordPosition()
     }
 
+    private fun updateSendButtonState() {
+        btnSend.isEnabled = !autoSendEnabled
+        btnSend.alpha = if (autoSendEnabled) 0.5f else 1.0f
+    }
+
     private fun clearCanvas() {
         cancelAutoSend()
         canvasView.clear()
@@ -189,6 +209,11 @@ class MainActivity : AppCompatActivity() {
             statusText.text = "Request cancelled"
             return
         }
+        
+        if (!autoSendEnabled) {
+            return
+        }
+        
         cancelAutoSend()
         autoSendJob = scope.launch {
             delay(AUTO_SEND_DELAY_MS)
