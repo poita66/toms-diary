@@ -67,10 +67,11 @@ class HandwritingRenderer(private val context: Context) {
         val canvasWidth = (wordWidth + leftPadding + rightPadding).toInt()
         val canvasHeight = (wordHeight + topPadding + bottomPadding).toInt()
         
+        // Use ARGB_8888 with transparency
         val bitmap = Bitmap.createBitmap(canvasWidth, canvasHeight, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         
-        canvas.drawColor(options.backgroundColor)
+        // Don't draw background - keep it transparent
         
         val x = leftPadding
         val y = topPadding + wordHeight - fontMetrics.bottom

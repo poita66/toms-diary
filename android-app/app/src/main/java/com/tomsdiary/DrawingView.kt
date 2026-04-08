@@ -54,11 +54,12 @@ class DrawingView @JvmOverloads constructor(
     private var isReadOnly = false
 
     // Cache for static elements to avoid redrawing on every frame
-    private var guideLinesBitmap: Bitmap? = null
-    private var guideLinesDirty = true
     private var einkController: Any? = null
-    private var dirtyRect: Rect? = null
     private var isSupernote = false
+    private var lastFlushTime = 0L
+    private val FLUSH_INTERVAL_MS = 50L
+    private var lastEventTime = 0L
+    private var eventCount = 0
 
 
 
@@ -72,7 +73,6 @@ class DrawingView @JvmOverloads constructor(
         currentWordY = 0f
         wordInitialized = false
         isReadOnly = false
-        guideLinesDirty = true  // Regenerate guide lines cache
         invalidate()
     }
     
@@ -277,48 +277,52 @@ class DrawingView @JvmOverloads constructor(
                 lastY = event.y
                 currentPath.moveTo(event.x, event.y)
                 currentColor = Color.BLACK
-
-                // Initialize dirty rect for partial updates
-                dirtyRect = Rect(
-                    (event.x - 20).toInt(),
-                    (event.y - 20).toInt(),
-                    (event.x + 20).toInt(),
-                    (event.y + 20).toInt()
-                )
+                
+                val downTime = System.currentTimeMillis()
+                android.util.Log.d("DrawingView", "[T] ACTION_DOWN: delta=${downTime - lastEventTime}ms")
+                lastEventTime = downTime
+                eventCount = 0
 
                 // Initial invalidation for pen down
                 invalidate()
-                // Don't trigger ePaper refresh on down - wait for actual drawing
             }
             MotionEvent.ACTION_MOVE -> {
                 if (isDrawing) {
+                    eventCount++
+                    val moveTime = System.currentTimeMillis()
+                    val deltaTime = moveTime - lastEventTime
+                    
                     currentPath.quadTo(lastX, lastY, (event.x + lastX) / 2, (event.y + lastY) / 2)
                     lastX = event.x
                     lastY = event.y
 
-                    // Expand dirty rect to include new stroke segment
-                    dirtyRect?.let { rect ->
-                        rect.left = minOf(rect.left, (minOf(lastX, event.x) - 20).toInt())
-                        rect.top = minOf(rect.top, (minOf(lastY, event.y) - 20).toInt())
-                        rect.right = maxOf(rect.right, (maxOf(lastX, event.x) + 20).toInt())
-                        rect.bottom = maxOf(rect.bottom, (maxOf(lastY, event.y) + 20).toInt())
-                    }
-
-                    // Invalidate and queue ePaper update (without triggering immediately)
+                    // Invalidate on every event for smooth rendering
+                    val invalidateStart = System.nanoTime()
                     invalidate()
-                    queuePartialRefresh()
+                    val invalidateEnd = System.nanoTime()
+                    
+                    // Log every 10th event to avoid spam
+                    if (eventCount % 10 == 0) {
+                        android.util.Log.d("DrawingView", "[T] MOVE #$eventCount: delta=${deltaTime}ms, invalidate=${(invalidateEnd - invalidateStart)/1000}us")
+                    }
+                    lastEventTime = moveTime
                 }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 if (isDrawing) {
+                    val upTime = System.currentTimeMillis()
+                    android.util.Log.d("DrawingView", "[T] ACTION_UP: delta=${upTime - lastEventTime}ms, total_events=$eventCount")
+                    
                     isDrawing = false
                     paths.add(currentPath)
                     pathColors.add(currentColor)
                     currentPath = Path()
                     // Final full invalidation and ePaper refresh
+                    val triggerStart = System.nanoTime()
                     invalidate()
                     triggerPartialRefresh()
-                    dirtyRect = null  // Reset dirty rect
+                    val triggerEnd = System.nanoTime()
+                    android.util.Log.d("DrawingView", "[T] triggerPartialRefresh: ${(triggerEnd - triggerStart)/1000}us")
                     (context as? MainActivity)?.scheduleAutoSend()
                 }
             }
@@ -361,10 +365,6 @@ class DrawingView @JvmOverloads constructor(
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        // Guide lines need to be regenerated when view size changes
-        if (w != oldw || h != oldh) {
-            guideLinesDirty = true
-        }
     }
     
     override fun onDraw(canvas: Canvas) {
@@ -374,7 +374,15 @@ class DrawingView @JvmOverloads constructor(
         
         canvas.drawColor(Color.WHITE)
         
-        drawGuideLines(canvas)
+        // Draw guide lines
+        var y = FIRST_LINE_Y
+        val maxY = height.toFloat()
+        val lineWidth = if (screenWidth > 0) screenWidth - LEFT_PADDING - RIGHT_PADDING else 1200f - 80f
+        
+        while (y < maxY) {
+            canvas.drawLine(LEFT_PADDING, y, LEFT_PADDING + lineWidth, y, linePaint)
+            y += GUIDE_LINE_Y_SPACING
+        }
         
         responses.forEach { (bitmap, matrix, paint) ->
             canvas.drawBitmap(bitmap, matrix, paint)
@@ -396,84 +404,16 @@ class DrawingView @JvmOverloads constructor(
     }
     
     /**
-     * Draw guide lines using cached bitmap for better performance.
-     * Guide lines are pre-rendered and only regenerated when needed.
-     */
-    private fun drawGuideLines(canvas: Canvas) {
-        // Use cached bitmap if available and not dirty
-        if (!guideLinesDirty && guideLinesBitmap != null) {
-            canvas.drawBitmap(guideLinesBitmap!!, 0f, 0f, null)
-            return
-        }
-        
-        // Create or regenerate the guide lines bitmap
-        guideLinesBitmap = createGuideLinesBitmap()
-        guideLinesDirty = false
-        
-        // Draw the cached bitmap
-        canvas.drawBitmap(guideLinesBitmap!!, 0f, 0f, null)
-    }
-    
-    /**
-     * Pre-render guide lines to a bitmap for caching.
-     * This avoids redrawing the same lines on every frame.
-     */
-    private fun createGuideLinesBitmap(): Bitmap {
-        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
-        canvas.drawColor(Color.WHITE)
-        
-        var y = FIRST_LINE_Y
-        val maxY = height.toFloat()
-        val lineWidth = if (screenWidth > 0) screenWidth - LEFT_PADDING - RIGHT_PADDING else 1200f - 80f
-        
-        while (y < maxY) {
-            canvas.drawLine(LEFT_PADDING, y, LEFT_PADDING + lineWidth, y, linePaint)
-            y += GUIDE_LINE_Y_SPACING
-        }
-        
-        return bitmap
-    }
-    
-    /**
-     * Queue a partial refresh without triggering it immediately.
-     * Only works on Supernote devices with custom ePaper API.
-     */
-    private fun queuePartialRefresh() {
-        if (!isSupernote || einkController == null) return
-        
-        dirtyRect?.let { rect ->
-            einkController?.let {
-                try {
-                    // Queue the dirty rect for partial update
-                    val postRectMethod = it.javaClass.getDeclaredMethod(
-                        "postRectForPw",
-                        Rect::class.java,
-                        Int::class.javaPrimitiveType,
-                        Int::class.javaPrimitiveType,
-                        Int::class.javaPrimitiveType,
-                        Int::class.javaPrimitiveType
-                    )
-                    postRectMethod.isAccessible = true
-                    // Parameters: bmpType=0, displayMode=1 (fast), dataMode=1 (fast), a2Gate=0
-                    postRectMethod.invoke(it, rect, 0, 1, 1, 0)
-                } catch (e1: Exception) {
-                    android.util.Log.e("DrawingView", "Failed to queue partial refresh", e1)
-                }
-            }
-        }
-    }
-    
-    /**
      * Trigger the queued partial refresh.
      * Only works on Supernote devices with custom ePaper API.
      */
     private fun triggerPartialRefresh() {
         if (!isSupernote || einkController == null) {
-            android.util.Log.d("DrawingView", "Not a Supernote device or ePaper API not available")
+            android.util.Log.d("DrawingView", "[T] Not a Supernote device or ePaper API not available")
             return
         }
         
+        val triggerStart = System.nanoTime()
         einkController?.let {
             try {
                 // Update PW property to trigger the actual display update
@@ -484,5 +424,7 @@ class DrawingView @JvmOverloads constructor(
                 android.util.Log.e("DrawingView", "Failed to trigger partial refresh", e1)
             }
         }
+        val triggerEnd = System.nanoTime()
+        android.util.Log.d("DrawingView", "[T] updatePWProperty: ${(triggerEnd - triggerStart)/1000}us")
     }
 }

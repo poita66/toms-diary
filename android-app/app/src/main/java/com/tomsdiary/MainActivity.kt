@@ -27,6 +27,7 @@ class MainActivity : AppCompatActivity() {
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val isProcessing = AtomicBoolean(false)
+    private val isCancelled = AtomicBoolean(false)
     
     // LLM configuration loaded from preferences
     private lateinit var openAIClient: OpenAIClient
@@ -81,7 +82,7 @@ class MainActivity : AppCompatActivity() {
         statusText.setTextColor(Color.GREEN)
     }
 
-    private var conversationHistory = mutableListOf<Pair<String, String>>()
+    private var conversationHistory = mutableListOf<Pair<String, String>>() // (fullUserMessage, assistantResponse)
     private var currentInputBitmap: String? = null
     private var currentResponseText = ""
     private var currentTranscription = ""
@@ -208,6 +209,8 @@ class MainActivity : AppCompatActivity() {
             android.util.Log.d("MainActivity", "sendCanvasImage: already processing, ignoring")
             return
         }
+        // Reset cancellation flag for new request
+        isCancelled.set(false)
 
         android.util.Log.d("MainActivity", "sendCanvasImage: history size = ${conversationHistory.size}")
         
@@ -241,8 +244,9 @@ class MainActivity : AppCompatActivity() {
                 
                 android.util.Log.d("MainActivity", "Image sizes: cropped=${croppedBitmap.width}x${croppedBitmap.height}, base64 length=${base64Image.length}")
                 
-                // Limit history to last 3 turns to reduce inference time
-                val historyToSend = conversationHistory.takeLast(3).toList()
+                // Send conversation history (text only) to provide context
+                val historyToSend = conversationHistory.takeLast(10).toList()
+                android.util.Log.d("MainActivity", "Sending ${historyToSend.size} turns of history to LLM")
                 
                 withContext(Dispatchers.Main) {
                     statusText.text = "Processing..."
@@ -269,73 +273,62 @@ class MainActivity : AppCompatActivity() {
                 android.util.Log.d("MainActivity", "Using font size: $fontSize for screen width: $screenWidth")
                 
                 var fullResponse = ""
-                var transcription = ""
-                var inTranscription = false
-                
                 for (chunk in openAIClient.chatStreamWithImage(
                     sessionId = "local",
                     imageBase64 = base64Image,
                     history = history,
                     persona = currentPersona,
-                    onCancel = { isProcessing.get() && btnSend.isEnabled }  // Check if user cancelled
+                    onCancel = { isCancelled.get() }
                 )) {
                     val token = chunk.token
                     if (token != null) {
                         fullResponse += token
-                        
-                        // Parse transcription if present
-                        if (token.contains("[TRANSCRIPTION]")) {
-                            inTranscription = true
-                        }
-                        if (inTranscription) {
-                            if (token.contains("[/TRANSCRIPTION]")) {
-                                inTranscription = false
-                            } else {
-                                transcription += token
-                            }
-                        }
-                        
                         withContext(Dispatchers.Main) {
                             statusText.text = "Writing..."
                         }
                     }
-                    
-                    if (chunk.isDone) {
-                        break
-                    }
+                    if (chunk.isDone) break
                 }
                 
-                currentResponseText = fullResponse
+                // Extract transcription and response from full response
+                val transcription = if (fullResponse.contains("[TRANSCRIPTION]") && fullResponse.contains("[/TRANSCRIPTION]")) {
+                    fullResponse.substringAfter("[TRANSCRIPTION]").substringBefore("[/TRANSCRIPTION]").trim()
+                } else { "" }
+                
+                val responseText = if (fullResponse.contains("[/TRANSCRIPTION]")) {
+                    fullResponse.substringAfter("[/TRANSCRIPTION]").trim()
+                } else if (fullResponse.contains("[TRANSCRIPTION]")) {
+                    fullResponse.substringBefore("[TRANSCRIPTION]").trim()
+                } else { fullResponse }
+                
+                currentResponseText = responseText
                 currentTranscription = transcription
                 
-                android.util.Log.d("MainActivity", "Response received: ${fullResponse.length} chars, transcription: ${transcription.length} chars")
+                android.util.Log.d("MainActivity", "Full response length: ${fullResponse.length}")
+                android.util.Log.d("MainActivity", "Full response: '$fullResponse'")
+                android.util.Log.d("MainActivity", "Transcription: '$transcription'")
+                android.util.Log.d("MainActivity", "Response: '$responseText'")
                 
                 withContext(Dispatchers.Main) {
-                    // Clear canvas and start rendering
                     canvasView.clear()
                     canvasView.resetWordPosition()
-                    
-                    // Extract the actual response (after transcription)
-                    val responseText = if (fullResponse.contains("[/TRANSCRIPTION]")) {
-                        fullResponse.substringAfter("[/TRANSCRIPTION]").trim()
-                    } else {
-                        fullResponse
-                    }
-                    
-                    android.util.Log.d("MainActivity", "Rendering response: $responseText")
-                    
-                    // Render words locally and stream them to the canvas
-                    renderResponseLocally(responseText, fontSize)
+                    renderResponseLocally(responseText, fontSize, screenWidth)
                     
                     isProcessing.set(false)
-                    btnSend.isEnabled = true
-                    statusText.text = "Response complete"
-                    saveToHistory()
+                    isCancelled.set(false)
+                    if (isCancelled.get()) {
+                        statusText.text = "Cancelled"
+                    } else {
+                        btnSend.isEnabled = true
+                        statusText.text = "Response complete"
+                        saveToHistory()
+                    }
                 }
                 
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     isProcessing.set(false)
+                    isCancelled.set(false)
                     btnSend.isEnabled = true
                     statusText.text = "Error: ${e.message}"
                     Toast.makeText(this@MainActivity, "Processing failed: ${e.message}", Toast.LENGTH_SHORT).show()
@@ -344,14 +337,17 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
-    private fun renderResponseLocally(text: String, fontSize: Int) {
+    private fun renderResponseLocally(text: String, fontSize: Int, screenWidth: Int) {
         scope.launch(Dispatchers.Default) {
+            // Calculate actual usable width: screen width minus left/right padding (40px each side)
+            val maxWidth = screenWidth - 80
+            
             val options = HandwritingRenderer.RenderOptions(
                 fontSize = fontSize,
                 backgroundColor = Color.WHITE,
                 textColor = Color.BLACK,
                 padding = 20,
-                maxWidth = 900,
+                maxWidth = maxWidth,
                 addVariation = true
             )
             
@@ -403,9 +399,11 @@ class MainActivity : AppCompatActivity() {
     private fun displayWord(bitmap: Bitmap) {
         try {
             val (x, y) = canvasView.getNextWordPosition()
-            // Offset y upward by bitmap height so text baseline sits on the line
-            val descenderOffset = (bitmap.height * 0.2).toFloat()
-            val adjustedY = y - descenderOffset
+            // Offset y to align text baseline with the line
+            // HandwritingRenderer uses topPadding=10, bottomPadding=25
+            // So baseline is roughly 75% from the top of the bitmap
+            val baselineOffset = (bitmap.height * 0.75f)
+            val adjustedY = y - baselineOffset
             canvasView.addWord(bitmap, x, adjustedY)
             canvasView.advanceWordPosition(bitmap.width.toFloat())
         } catch (e: Exception) {
@@ -416,8 +414,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun saveToHistory() {
         if (currentTranscription.isNotEmpty()) {
-            conversationHistory.add(Pair(currentTranscription, currentResponseText))
-            android.util.Log.d("MainActivity", "Added to history, total: ${conversationHistory.size}")
+            // Save full formatted message: [TRANSCRIPTION]...[/TRANSCRIPTION]\n\nresponse
+            val fullUserMessage = "[TRANSCRIPTION]$currentTranscription[/TRANSCRIPTION]"
+            conversationHistory.add(Pair(fullUserMessage, currentResponseText))
+            android.util.Log.d("MainActivity", "Added to history: '$fullUserMessage' -> '${currentResponseText.take(50)}...'")
             
             val fullBitmap = captureCanvas()
             historyCanvasBitmaps.add(0, fullBitmap)
