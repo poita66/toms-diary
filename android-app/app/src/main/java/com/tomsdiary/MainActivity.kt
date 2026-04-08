@@ -88,6 +88,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun initViews() {
         canvasView = findViewById(R.id.canvasView)
+        canvasView.initEinkManager(this)  // Initialize Supernote ePaper API
         btnClear = findViewById(R.id.btnClear)
         btnSend = findViewById(R.id.btnSend)
         btnSettings = findViewById(R.id.btnSettings)

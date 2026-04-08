@@ -16,10 +16,14 @@ jobs:
       - name: Build iOS App
         run: |
           cd ios-app
+          # List available schemes
+          xcodebuild -project TomsDiary.xcodeproj -list
+          
+          # Build without specifying a scheme (uses default)
           xcodebuild -project TomsDiary.xcodeproj \
-            -scheme TomsDiary \
             -configuration Debug \
             -derivedDataPath Build \
+            -sdk iphonesimulator \
             clean build
 
       - name: Upload .app bundle

@@ -11,8 +11,7 @@ import android.graphics.Rect
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
-import android.os.Handler
-import android.os.Looper
+
 
 class DrawingView @JvmOverloads constructor(
     context: Context,
@@ -57,21 +56,11 @@ class DrawingView @JvmOverloads constructor(
     // Cache for static elements to avoid redrawing on every frame
     private var guideLinesBitmap: Bitmap? = null
     private var guideLinesDirty = true
+    private var einkController: Any? = null
+    private var dirtyRect: Rect? = null
+    private var isSupernote = false
 
-    private val handler = Handler(Looper.getMainLooper())
-    private val throttleDelay = 20L // Increased from 5ms to 20ms for better balance
-    private var isThrottled = false
-    private var dirtyRect: Rect? = null // Track area that needs redrawing for partial updates
-    
-    private val refreshRunnable = Runnable {
-        if (isDrawing) {
-            // Use partial invalidation for faster updates (<50ms vs 500ms+ for full refresh)
-            dirtyRect?.let { rect ->
-                invalidate(rect)
-            } ?: invalidate()
-        }
-        isThrottled = false
-    }
+
 
     fun clear() {
         paths.clear()
@@ -83,13 +72,84 @@ class DrawingView @JvmOverloads constructor(
         currentWordY = 0f
         wordInitialized = false
         isReadOnly = false
-        dirtyRect = null
         guideLinesDirty = true  // Regenerate guide lines cache
         invalidate()
     }
     
     fun setReadOnly(readOnly: Boolean) {
         isReadOnly = readOnly
+    }
+    
+    fun initEinkManager(context: Context) {
+        // Detect if this is a Supernote device
+        isSupernote = isSupernoteDevice(context)
+        android.util.Log.d("DrawingView", "Is Supernote device: $isSupernote")
+        
+        if (!isSupernote) {
+            android.util.Log.d("DrawingView", "Not a Supernote device, skipping ePaper optimization")
+            return
+        }
+        
+        try {
+            // Use EinkPWCoreController which has postRectForPw for partial updates
+            val className = "com.htfyun.eink.pw.core.EinkPWCoreController"
+            val controllerClass = Class.forName(className)
+            val constructor = controllerClass.getDeclaredConstructor()
+            einkController = constructor.newInstance()
+            
+            // Initialize the native library
+            val initMethod = controllerClass.getDeclaredMethod("initForPw")
+            initMethod.isAccessible = true
+            initMethod.invoke(einkController)
+            
+            // Enable fast ePaper update mode on this view
+            // setEinkUpdateModeWithView(View view, int dataMode, int dispMode)
+            val viewClass = Class.forName("android.view.View")
+            val setModeMethod = controllerClass.getDeclaredMethod(
+                "setEinkUpdateModeWithView",
+                viewClass,
+                Int::class.javaPrimitiveType,
+                Int::class.javaPrimitiveType
+            )
+            setModeMethod.isAccessible = true
+            // dataMode=1 (fast), dispMode=1 (fast partial update)
+            setModeMethod.invoke(einkController, this, 1, 1)
+            android.util.Log.d("DrawingView", "Eink update mode set to fast partial")
+            
+            android.util.Log.d("DrawingView", "EinkPWCoreController initialized: $einkController")
+        } catch (e: Exception) {
+            android.util.Log.e("DrawingView", "Failed to init EinkPWCoreController", e)
+            einkController = null
+            isSupernote = false
+        }
+    }
+    
+    /**
+     * Detect if this is a Supernote device.
+     * Checks for Supernote-specific properties and classes.
+     */
+    private fun isSupernoteDevice(context: Context): Boolean {
+        return try {
+            // Check for Supernote's custom ePaper class
+            Class.forName("com.htfyun.eink.pw.core.EinkPWCoreController")
+            true
+        } catch (e: Exception) {
+            try {
+                // Fallback: check device manufacturer/model
+                val build = android.os.Build::class.java
+                val manufacturer = build.getField("MANUFACTURER").get(null) as? String
+                val model = build.getField("MODEL").get(null) as? String
+                
+                android.util.Log.d("DrawingView", "Device: $manufacturer / $model")
+                
+                // Supernote devices have "HTF" or "Supernote" in manufacturer/model
+                (manufacturer?.contains("HTF", ignoreCase = true) == true ||
+                 manufacturer?.contains("Supernote", ignoreCase = true) == true ||
+                 model?.contains("SN", ignoreCase = true) == true)
+            } catch (e2: Exception) {
+                false
+            }
+        }
     }
 
     fun getBitmap(): Bitmap {
@@ -226,10 +286,9 @@ class DrawingView @JvmOverloads constructor(
                     (event.y + 20).toInt()
                 )
 
-                handler.removeCallbacks(refreshRunnable)
-                isThrottled = false
                 // Initial invalidation for pen down
-                dirtyRect?.let { invalidate(it) }
+                invalidate()
+                // Don't trigger ePaper refresh on down - wait for actual drawing
             }
             MotionEvent.ACTION_MOVE -> {
                 if (isDrawing) {
@@ -245,24 +304,21 @@ class DrawingView @JvmOverloads constructor(
                         rect.bottom = maxOf(rect.bottom, (maxOf(lastY, event.y) + 20).toInt())
                     }
 
-                    if (!isThrottled) {
-                        isThrottled = true
-                        handler.postDelayed(refreshRunnable, throttleDelay)
-                    }
+                    // Invalidate and queue ePaper update (without triggering immediately)
+                    invalidate()
+                    queuePartialRefresh()
                 }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 if (isDrawing) {
                     isDrawing = false
-                    isThrottled = false
-                    handler.removeCallbacks(refreshRunnable)
                     paths.add(currentPath)
                     pathColors.add(currentColor)
                     currentPath = Path()
-                    // Reset dirty rect for next stroke
-                    dirtyRect = null
-                    // Final full invalidation to ensure everything is rendered
+                    // Final full invalidation and ePaper refresh
                     invalidate()
+                    triggerPartialRefresh()
+                    dirtyRect = null  // Reset dirty rect
                     (context as? MainActivity)?.scheduleAutoSend()
                 }
             }
@@ -294,16 +350,9 @@ class DrawingView @JvmOverloads constructor(
                 lastX = event.x
                 lastY = event.y
                 
-                // Update dirty rect
-                dirtyRect?.let { rect ->
-                    rect.left = minOf(rect.left, (minOf(lastX, event.x) - 20).toInt())
-                    rect.top = minOf(rect.top, (minOf(lastY, event.y) - 20).toInt())
-                    rect.right = maxOf(rect.right, (maxOf(lastX, event.x) + 20).toInt())
-                    rect.bottom = maxOf(rect.bottom, (maxOf(lastY, event.y) + 20).toInt())
-                }
-                
-                // Invalidate with partial update for faster response
-                dirtyRect?.let { invalidate(it) }
+                // Invalidate directly - no throttling
+                invalidate()
+                // Don't trigger ePaper refresh on generic motion either
                 return true
             }
         }
@@ -384,5 +433,56 @@ class DrawingView @JvmOverloads constructor(
         }
         
         return bitmap
+    }
+    
+    /**
+     * Queue a partial refresh without triggering it immediately.
+     * Only works on Supernote devices with custom ePaper API.
+     */
+    private fun queuePartialRefresh() {
+        if (!isSupernote || einkController == null) return
+        
+        dirtyRect?.let { rect ->
+            einkController?.let {
+                try {
+                    // Queue the dirty rect for partial update
+                    val postRectMethod = it.javaClass.getDeclaredMethod(
+                        "postRectForPw",
+                        Rect::class.java,
+                        Int::class.javaPrimitiveType,
+                        Int::class.javaPrimitiveType,
+                        Int::class.javaPrimitiveType,
+                        Int::class.javaPrimitiveType
+                    )
+                    postRectMethod.isAccessible = true
+                    // Parameters: bmpType=0, displayMode=1 (fast), dataMode=1 (fast), a2Gate=0
+                    postRectMethod.invoke(it, rect, 0, 1, 1, 0)
+                } catch (e1: Exception) {
+                    android.util.Log.e("DrawingView", "Failed to queue partial refresh", e1)
+                }
+            }
+        }
+    }
+    
+    /**
+     * Trigger the queued partial refresh.
+     * Only works on Supernote devices with custom ePaper API.
+     */
+    private fun triggerPartialRefresh() {
+        if (!isSupernote || einkController == null) {
+            android.util.Log.d("DrawingView", "Not a Supernote device or ePaper API not available")
+            return
+        }
+        
+        einkController?.let {
+            try {
+                // Update PW property to trigger the actual display update
+                val updatePropMethod = it.javaClass.getDeclaredMethod("updatePWProperty")
+                updatePropMethod.isAccessible = true
+                updatePropMethod.invoke(it)
+            } catch (e1: Exception) {
+                android.util.Log.e("DrawingView", "Failed to trigger partial refresh", e1)
+            }
+        }
     }
 }
