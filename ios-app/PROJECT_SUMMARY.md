@@ -50,7 +50,8 @@ This directory contains a **complete scaffold** for implementing Tom's Diary on 
 
 2. **Add Font File**
    ```bash
-   cp ../backend/fonts/static/Caveat-Regular.ttf TomsDiary/Assets.xcassets/Fonts/
+   # Download Caveat-Regular.ttf from Google Fonts and add to:
+   # TomsDiary/Assets.xcassets/Fonts/Caveat-Regular.ttf
    ```
 
 3. **Create Xcode Project Files**
@@ -185,7 +186,6 @@ If you want to maintain this structure as a separate project:
 ## Resources
 
 - **Android Version**: See `../android-app/` for reference implementation
-- **Backend**: See `../backend/` for LLM integration details
 - **Main Docs**: See `../AGENTS.md` for project overview
 
 ## Support

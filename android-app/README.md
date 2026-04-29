@@ -2,7 +2,7 @@
 
 ## Overview
 
-This is the Android application for Tom's Diary, designed to run on the Supernote Nomad (Android 11, Wacom EMR). The app enables users to write handwritten notes to an AI agent, which reads the handwriting, responds, and the app displays the response as if it were handwritten.
+This is the Android application for Tom's Diary, designed to run on the Supernote Nomad (Android 11, Wacom EMR). The app enables users to write handwritten notes to an AI agent via direct OpenAI-compatible API calls. The app sends handwriting to an LLM and displays the response as locally-rendered handwriting.
 
 ## Target Hardware
 
@@ -22,20 +22,19 @@ See [Supernote Nomad Hardware Reference](../docs/supernote-nomad-hardware.md) fo
    - Export as high-resolution PNG images
    - Real-time drawing with pressure-sensitive stylus
 
-2. **WebSocket Communication**
-    - Connect to backend service at `ws://localhost:8080`
-   - Send handwritten images as base64-encoded PNG
-   - Receive streaming render chunks with handwriting responses
+2. **LLM Integration**
+   - Direct HTTP calls to any OpenAI-compatible API (vLLM, Ollama, etc.)
+   - Streaming responses via SSE
+   - Configurable endpoint via in-app Settings
 
-3. **Response Display**
-   - Receive and decode base64-encoded response images
-   - Scale and center images on canvas
-   - Clear canvas after sending for new input
+3. **Local Handwriting Rendering**
+   - Renders LLM responses as handwriting using the Caveat font
+   - Word-by-word streaming display on canvas
 
-4. **Connection Management**
-   - Connect/disconnect from backend
-   - Status indicators for connection state
-   - Error handling and reconnection support
+4. **Conversation Management**
+   - Conversation history with swipe navigation
+   - Multiple persona support (Tom Riddle, Generic, Friendly)
+   - Auto-send after idle timeout
 
 ## Setup
 
@@ -301,22 +300,6 @@ The app requires the following permissions (declared in AndroidManifest.xml):
 ## Testing
 
 ### Local Testing
-
-1. Start the backend server:
-   ```bash
-   cd ../backend
-   npm run dev
-   ```
-
-2. Build and install the app:
-   ```bash
-   ./gradlew installDebug
-   ```
-
-3. Launch the app and test:
-   - Click "Connect" to connect to backend
-   - Write on the canvas
-   - Click "Send" to send handwriting
    - View the AI response
 
 ### On Device Testing
@@ -361,6 +344,6 @@ The app requires the following permissions (declared in AndroidManifest.xml):
 
 - [Android 11 Documentation](https://developer.android.com/about/versions/11)
 - [Supernote Hardware Reference](../docs/supernote-nomad-hardware.md)
-- [Backend Documentation](../backend/README.md)
-- [Java WebSocket Documentation](https://github.com/joelittlejohn/java-websocket)
+- [Development Guide](../AGENTS.md)
+- 
 - [Kotlin Coroutines](https://kotlinlang.org/docs/coroutines-overview.html)

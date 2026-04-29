@@ -8,8 +8,8 @@ AI-powered handwritten journal system with:
 - **Local Processing**: Direct OpenAI API calls with local handwriting rendering
 - **LLM Backend**: Any OpenAI-compatible API (vLLM, Ollama, etc.)
 
-### Key Changes (v2.0)
-- ✅ **No backend server required** - app calls LLM directly
+### Key Architecture
+- ✅ **No backend server required** - apps call LLM directly
 - ✅ **Local handwriting rendering** - uses Caveat font on device
 - ✅ **Flexible LLM support** - works with any OpenAI-compatible API
 - ✅ **Simplified deployment** - just the app + your LLM of choice
@@ -78,26 +78,6 @@ hostname -I | awk '{print $1}'
 http://YOUR_IP:8001/v1
 ```
 
-```bash
-# Full deploy cycle (build, install, start)
-cd android-app && ./gradlew assembleDebug && \
-adb install -r app/build/outputs/apk/debug/app-debug.apk && \
-adb shell am start -n com.tomsdiary/.MainActivity
-
-# Or step by step:
-# Build (requires Java 17 - Java 21+ may have issues with Gradle 8.10)
-cd android-app && ./gradlew assembleDebug
-
-# Install to device
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-
-# Start app
-adb shell am start -n com.tomsdiary/.MainActivity
-
-# Run tests
-./gradlew test
-```
-
 ### LLM Server (Required)
 
 Start your OpenAI-compatible LLM server before using the app:
@@ -133,60 +113,7 @@ curl http://localhost:8001/v1/models
 - Apple Pencil support with pressure and tilt
 - iPad Pro 12.9" recommended for testing
 
-
-
 ## Code Style Guidelines
-
-### TypeScript (Backend)
-
-**Imports**: ES modules with `.js` extension (even for TypeScript files)
-```typescript
-import { WebSocketServer } from 'ws';
-import { logger } from '../utils/logger.js';
-import type { ClientToServerMessage } from '../types/messages.js';
-```
-
-**Types**: Use `type` aliases over `interface` for most cases. Explicit typing preferred.
-```typescript
-interface ServerOptions {
-  port: number;
-  host: string;
-}
-
-type LogLevel = 'debug' | 'info' | 'warn' | 'error';
-```
-
-**Naming**: 
-- Files: lowercase with path separators (`websocket.ts`, `handwriting.ts`)
-- Classes: PascalCase (`HandwritingRendererImpl`)
-- Functions/vars: camelCase (`handleConnection`, `activeSessions`)
-- Constants: UPPER_SNAKE_CASE (`DEFAULT_PADDING`, `RENDER_THRESHOLD`)
-
-**Error Handling**: Use logger for all errors, structured error handling with middleware
-```typescript
-try {
-  // operation
-} catch (error) {
-  logger.error(sessionId, 'Operation failed', error as Error, { context });
-  errorHandler.handleInternalError(ws, error as Error, context);
-}
-```
-
-**Logging**: Always include `sessionId` for traceability
-```typescript
-logger.info(sessionId, 'Client connected');
-logger.debug(sessionId, 'Token received', { length: token.length });
-logger.error(sessionId, 'Processing failed', error, { error: errorMessage });
-```
-
-**Async**: Use `async/await` over promises. Stream with `for await...of`.
-```typescript
-for await (const event of llmClient.chatStream(sessionId, messages)) {
-  if (event.type === 'token') {
-    // handle token
-  }
-}
-```
 
 ### Swift (iOS)
 
@@ -278,7 +205,7 @@ import java.io.ByteArrayOutputStream
 ```
 
 **Naming**:
-- Classes: PascalCase (`MainActivity`, `WebSocketClient`)
+- Classes: PascalCase (`MainActivity`, `OpenAIClient`)
 - Functions/vars: camelCase (`sendCanvasImage`, `isConnected`)
 - Constants: UPPER_SNAKE_CASE (`AUTO_SEND_DELAY_MS`, `SERVER_URL`)
 
@@ -294,8 +221,8 @@ scope.launch {
 
 **Null Safety**: Use nullable types explicitly, `?.` for safe calls
 ```kotlin
-private var webSocketClient: WebSocketClient? = null
-webSocketClient?.sendImage(base64Image, width, height)
+private var openAIClient: OpenAIClient? = null
+openAIClient?.sendImage(base64Image, width, height)
 ```
 
 **UI Updates**: Always use `withContext(Dispatchers.Main)` for UI changes from background threads
@@ -365,14 +292,6 @@ Accessed via the **Settings** button in the app:
 - **API Key**: `placeholder` (optional for local LLMs)
 - **Model Name**: `default` (or your specific model)
 
-### Android Server URL (deprecated)
-
-The app no longer connects to a WebSocket server. All processing is local.
-
-### Environment Variables (LLM Server)
-
-For vLLM or other LLM servers, configure according to their documentation.
-
 ## vLLM Optimization
 
 ### Disabling Reasoning for Fast Inference
@@ -399,25 +318,6 @@ put("include_reasoning", false)  // Don't return reasoning in response
 - Images are cropped to handwriting bounds (no fixed scaling)
 - Use `detail: 'low'` in image_url to reduce token usage (already configured)
 - Full resolution images work fine with `enable_thinking: false` optimization
-
-## Testing Patterns
-
-### Backend Tests (Vitest)
-```typescript
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-
-describe('Feature Name', () => {
-  it('should do something', () => {
-    const result = functionUnderTest(input);
-    expect(result).toBe(expected);
-  });
-
-  it('should handle async operation', async () => {
-    const result = await asyncFunction(input);
-    expect(result).toBeTruthy();
-  }, 30000); // timeout for integration tests
-});
-```
 
 ## Common Tasks
 

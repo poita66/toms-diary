@@ -26,7 +26,7 @@ No external dependencies needed - all functionality uses built-in frameworks:
 
 #### 1.3 Add Caveat Font
 
-1. Copy `Caveat-Regular.ttf` from `backend/fonts/static/` to `TomsDiary/Assets.xcassets/Fonts/`
+1. Add `Caveat-Regular.ttf` to `TomsDiary/Assets.xcassets/Fonts/`
 2. In Xcode, select the font file
 3. In File Inspector, set "Target Membership" to TomsDiary
 4. Add to `Info.plist` under `UIAppFonts` (already done in template)

@@ -11,70 +11,29 @@ This directory contains documentation for the Tom's Diary project, including har
 ### Components
 
 - [Android App Documentation](../android-app/README.md) - Mobile application details
-- [Backend Service Documentation](../backend/README.md) - Server-side implementation
 
 ## Research Areas
 
 ### Handwriting Recognition
 
-**Status**: To be researched
-
-**Key Questions**:
-- How well does Qwen3.5 VLM handle handwritten text?
-- What's the accuracy compared to dedicated OCR models?
-- Can we use incremental/partial images?
-- Is there image prefix caching in vLLM?
-
-**Potential Approaches**:
-- VLM-based (Qwen3.5, GPT-4V, etc.)
-- Dedicated OCR (TrOCR, PaddleOCR, Tesseract)
-- Hybrid approaches
+**Status**: Implemented — uses Caveat font with word-by-word streaming rendering
 
 ### Handwriting Rendering
 
-**Status**: To be researched
-
-**Key Questions**:
-- What models exist for text-to-handwriting conversion?
-- Can rendering be streamed incrementally?
-- Should we attempt to copy user's handwriting style?
-- How to optimize for e-ink display constraints?
-
-**Potential Approaches**:
-- GAN-based generation
-- Transformer sequence-to-stroke models
-- Rule-based with handwriting fonts
-- Hybrid pre-rendered stroke composition
+**Status**: Implemented — uses Caveat font with word-by-word streaming rendering
 
 ## Development Notes
 
 ### System Architecture
-
-```
-┌──────────────┐         WebSocket          ┌──────────────┐
-│   Android    │◄──────────────────────────►│   Backend    │
-│     App      │  Images, Render Chunks      │   Service    │
-└──────────────┘                             └──────┬───────┘
-                                                     │
-                                                     ▼
-                                            ┌──────────────┐
-                                            │      VLM      │
-                                            │  (vLLM +      │
-                                            │   Qwen3.5)    │
-                                            └──────────────┘
-```
-
 ### Data Flow
 
 1. User writes on Supernote Nomad
-2. Android app captures screen as image
-3. Image sent to backend via WebSocket
-4. Backend sends image to VLM for recognition
-5. VLM returns text transcription
-6. Backend generates AI response via LLM
-7. Response streamed to handwriting renderer
-8. Rendering instructions streamed back to app
-9. App displays rendered handwriting on e-ink
+2. App captures and crops handwriting to bounds
+3. Image sent to LLM via OpenAI API
+4. LLM reads handwriting
+5. LLM returns streaming tokens
+6. App renders tokens as handwriting locally
+7. Words displayed on canvas with natural spacing
 
 ## Contributing to Documentation
 

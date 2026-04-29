@@ -5,7 +5,7 @@
 - [ ] Set up Xcode development environment
 - [ ] Create Apple Developer account (if needed)
 - [ ] Get an iPad with Apple Pencil for testing
-- [ ] Copy Caveat-Regular.ttf from `backend/fonts/static/` to `ios-app/TomsDiary/Assets.xcassets/Fonts/`
+- [ ] Add Caveat-Regular.ttf to `TomsDiary/Assets.xcassets/Fonts/`
 - [ ] Create Xcode project using the provided structure
 
 ## Core Features
