@@ -83,7 +83,7 @@ This is the same font used by the original server-side renderer.
 
 - **WebSocket connection**: No longer needed
 - **Connect/Disconnect buttons**: Removed from UI
-- **WebSocketClient.kt**: Deprecated (kept for reference only)
+- **WebSocketClient.kt**: Removed
 
 ## Benefits
 

@@ -6,35 +6,34 @@ The basic idea is that the user can write notes to the AI agent, and it can read
 
 ## Hardware
 
-The initial proof-of-concept will be done on a Supernote Nomad (Android 11, Wacom EMR).
+The initial proof-of-concept was built on a Supernote Nomad (Android 11, Wacom EMR).
 
 ## Software
 
-- Android app
-- VLM (vLLM + Qwen3.5 27b 4-bit AWQ will be used for testing) OR LLM+handwriting recognition model
-- Backend service (to keep as much work off the Supernote as possible)
+- **Android app**: captures handwritten input, sends it to a vision-capable LLM, and renders the streamed response back as handwriting — all on-device, no backend server involved.
+- **LLM**: any OpenAI-compatible vision endpoint (vLLM, Ollama, etc.) that you run yourself.
 
-### Android app
+## Quick Start
 
-Just needs to be able to take the written messages, wait a bit, clear the screen, and send the images off to the service
+1. Start a vision-capable OpenAI-compatible LLM server, e.g. vLLM:
+   ```bash
+   vllm serve --model Qwen/Qwen2.5-VL-7B-Instruct --port 8001
+   ```
+2. Build and install the Android app:
+   ```bash
+   cd android-app
+   ./gradlew assembleDebug
+   adb install -r app/build/outputs/apk/debug/app-debug.apk
+   adb shell am start -n com.tomsdiary/.MainActivity
+   ```
+3. Open **Settings** in the app and set the LLM Base URL (e.g. `http://localhost:8001/v1`).
+4. Write on the canvas and watch the response render as handwriting.
 
-### Backend service
+See [android-app/QUICK_START.md](android-app/QUICK_START.md) for full setup details and troubleshooting.
 
-The backend will be written in TypeScript, run on Node 24, and communicate with the app via WebSocket.
+## Handwriting recognition & rendering
 
-It will take the images sent by the app, send the images off for recognition & response (maybe 2 steps if not VLM), streams the response to the Handwriting rendering model, and streams its output back to the app.
-
-## Handwriting recognition
-
-No idea how well Qwen3.5 will do with handwriting, should be one of the first things tested.
-
-Should we try to send incremental images to the VLM? Is there prefix caching for images?
-
-## Handwriting rendering
-
-No idea - needs research. Ideally it'd render the words as the LLM spits them out, even better if animated like writing.
-
-Should it try to copy the user's handwriting? Would that be odd?
+Handwriting recognition and rendering are implemented via a vision-capable LLM plus a local Caveat-font renderer — see [android-app/LOCAL_PROCESSING.md](android-app/LOCAL_PROCESSING.md) for how the pipeline works.
 
 ## Bugs
 

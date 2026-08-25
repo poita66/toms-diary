@@ -24,7 +24,6 @@ This directory contains documentation for the Tom's Diary project, including har
 
 ## Development Notes
 
-### System Architecture
 ### Data Flow
 
 1. User writes on Supernote Nomad
@@ -48,6 +47,6 @@ When adding new documentation:
 
 - [Supernote Official Site](https://supernote.com)
 - [Supernote Community](https://www.reddit.com/r/Supernote/)
-- [vLLM Documentation](https://docs.lmformat.io/)
+- [vLLM Documentation](https://docs.vllm.ai)
 - [Qwen Models](https://qwenlm.github.io/)
 - [Android Developers](https://developer.android.com)

@@ -87,9 +87,9 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("com.google.android.material:material:1.11.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
-    implementation("org.java-websocket:Java-WebSocket:1.5.6")
     implementation("com.google.code.gson:gson:2.10.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }
 ```
 
@@ -147,104 +147,41 @@ adb shell am start -n com.tomsdiary/.MainActivity
 
 ## Architecture
 
-### Components
-
-```
-┌─────────────────────────────────────────┐
-│           MainActivity                   │
-├─────────────────────────────────────────┤
-│  ┌──────────────┐  ┌─────────────────┐  │
-│  │  WebView      │  │  WebSocket      │  │
-│  │  (Canvas)     │◄─┤  Client         │  │
-│  └──────────────┘  │                 │  │
-│           ▲         └─────────────────┘  │
-│           │                │              │
-│  ┌──────────────┐  ┌─────────────────┐  │
-│  │  Image        │  │  State          │  │
-│  │  Capture      │  │  Manager        │  │
-│  └──────────────┘  └─────────────────┘  │
-└─────────────────────────────────────────┘
-```
-
 ### Key Classes
 
 #### MainActivity
 - Main activity managing the UI and app flow
-- Handles button clicks (Clear, Send, Connect)
-- Coordinates between WebView and WebSocketClient
-- Manages app state (connected, processing, etc.)
+- Handles button clicks (Clear, Send)
+- Coordinates canvas capture, the LLM client, and the handwriting renderer
+- Manages app state (idle, processing, etc.)
 
-#### WebView
+#### DrawingView
 - Custom View for handwriting capture
-- Handles touch events for drawing
-- Captures canvas as Bitmap
-- Renders response images
+- Handles touch/stylus events for drawing
+- Captures canvas as a Bitmap
 
-#### WebSocketClient
-- Manages WebSocket connection to backend
-- Sends images as base64-encoded messages
-- Receives render chunks and complete notifications
-- Handles connection lifecycle
+#### OpenAIClient
+- Makes direct HTTP calls to any OpenAI-compatible API
+- Sends the canvas image (base64 PNG) and streams the response
+- See [LOCAL_PROCESSING.md](LOCAL_PROCESSING.md) for the full request/response flow
+
+#### HandwritingRenderer
+- Renders streamed LLM text as handwriting locally using the Caveat font
 
 ### Data Flow
 
-1. **User writes** on canvas → WebView captures strokes
-2. **User clicks Send** → MainActivity captures canvas as Bitmap
+1. **User writes** on canvas → DrawingView captures strokes
+2. **User sends (or auto-send fires)** → MainActivity captures canvas as Bitmap
 3. **Bitmap → Base64** → PNG encoded as base64 string
-4. **WebSocket send** → Image sent to backend
+4. **LLM call** → Image sent directly to the configured OpenAI-compatible endpoint
 5. **Canvas cleared** → Ready for new input
-6. **Backend processes** → VLM reads handwriting, generates response
-7. **Render chunks received** → Base64 images streamed back
-8. **Response displayed** → Images rendered on WebView
-
-## Communication Protocol
-
-### WebSocket Messages
-
-**Client → Server**
-
-```json
-{
-  "type": "image",
-  "data": "<base64-encoded-png-image>",
-  "metadata": {
-    "timestamp": 1234567890,
-    "width": 1404,
-    "height": 1872
-  }
-}
-```
-
-**Server → Client**
-
-```json
-{
-  "type": "render-chunk",
-  "data": "<base64-encoded-rendered-image>",
-  "metadata": {
-    "chunkIndex": 0,
-    "totalChunks": 10
-  }
-}
-```
-
-```json
-{
-  "type": "complete"
-}
-```
+6. **Streaming tokens received** → Rendered as handwriting word-by-word on canvas
 
 ## Configuration
 
-### Backend Server URL
+### LLM Endpoint
 
-The default server URL is hardcoded in `MainActivity.kt`:
-
-```kotlin
-    private val SERVER_URL = "ws://localhost:8080"
-```
-
-Update this to match your backend server address.
+Configured in-app via **Settings** (persisted via `LLMConfig`) — see [LOCAL_PROCESSING.md](LOCAL_PROCESSING.md) for defaults and example endpoints.
 
 ### Network Permissions
 
@@ -266,13 +203,10 @@ The app requires the following permissions (declared in AndroidManifest.xml):
 
 ### Control Panel
 - **Clear Button**: Clears the canvas
-- **Send Button**: Sends current canvas to backend
-- **Connect Button**: Toggle WebSocket connection
+- **Send Button**: Sends current canvas to the configured LLM
 
 ### Status Text
-- Shows connection state (Connected/Disconnected)
 - Shows processing state (Sending, Waiting for response)
-- Color-coded: Green (connected), Red (disconnected), Blue (processing)
 
 ## Development Considerations
 
@@ -294,29 +228,25 @@ The app requires the following permissions (declared in AndroidManifest.xml):
 
 - Capture at device resolution for best OCR results
 - PNG format for lossless quality
-- Base64 encoding for WebSocket transmission
+- Base64 encoding for the LLM API request
 - Typical image size: ~500KB-1MB for full canvas
 
 ## Testing
-
-### Local Testing
-   - View the AI response
 
 ### On Device Testing
 
 - Test handwriting capture at various speeds
 - Verify image quality meets VLM requirements
-- Test WebSocket reconnection on network loss
+- Test LLM reconnection on network loss
 - Profile battery consumption
 
 ## Troubleshooting
 
 ### Connection Issues
 
-- Verify backend server is running at correct address
-- Check firewall settings allow port 8080
-- Ensure device and server are on same network
-- Check backend logs for connection attempts
+- Verify your LLM server is running at the address configured in Settings
+- Ensure the device and LLM server are on the same network (use the server machine's IP, not `localhost`, when testing on physical hardware)
+- Check LLM server logs for incoming requests
 
 ### Build Issues
 
@@ -328,7 +258,7 @@ The app requires the following permissions (declared in AndroidManifest.xml):
 
 - Check Android logs: `adb logcat | grep TomsDiary`
 - Verify network permissions in AndroidManifest.xml
-- Check WebSocket connection state in app
+- Check the LLM Base URL configured in app Settings
 
 ## Future Enhancements
 
@@ -345,5 +275,4 @@ The app requires the following permissions (declared in AndroidManifest.xml):
 - [Android 11 Documentation](https://developer.android.com/about/versions/11)
 - [Supernote Hardware Reference](../docs/supernote-nomad-hardware.md)
 - [Development Guide](../AGENTS.md)
-- 
 - [Kotlin Coroutines](https://kotlinlang.org/docs/coroutines-overview.html)
