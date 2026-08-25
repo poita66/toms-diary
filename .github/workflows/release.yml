@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Decode signing keystore
+        run: echo "${{ secrets.SIGNING_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.keystore"
+
+      - name: Build release APK
+        working-directory: android-app
+        env:
+          SIGNING_KEYSTORE_PATH: ${{ runner.temp }}/release.keystore
+          SIGNING_KEYSTORE_PASSWORD: ${{ secrets.SIGNING_KEYSTORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Remove keystore from runner
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.keystore"
+
+      - name: Locate APK and compute checksum
+        id: artifact
+        run: |
+          APK="$(find android-app/app/build/outputs/apk/release -name '*.apk' | head -1)"
+          echo "apk_path=$APK" >> "$GITHUB_OUTPUT"
+          sha256sum "$APK" > "$APK.sha256"
+          cat "$APK.sha256"
+
+      # Produces a signed, publicly verifiable statement binding this APK's
+      # checksum to this exact commit, workflow file, and GitHub-hosted
+      # runner — verify with:
+      #   gh attestation verify <apk> --repo poita66/toms-diary
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: ${{ steps.artifact.outputs.apk_path }}
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            "${{ steps.artifact.outputs.apk_path }}" \
+            "${{ steps.artifact.outputs.apk_path }}.sha256" \
+            --title "${{ github.ref_name }}" \
+            --generate-notes

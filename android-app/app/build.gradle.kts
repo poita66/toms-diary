@@ -15,6 +15,23 @@ android {
         versionName = "1.0"
     }
 
+    signingConfigs {
+        // Populated from env vars in CI (see .github/workflows/release.yml).
+        // Falls back to debug signing for local builds when unset, so
+        // `./gradlew assembleRelease` still works for contributors without
+        // the release key.
+        create("release") {
+            val keystorePath = System.getenv("SIGNING_KEYSTORE_PATH")
+            if (keystorePath != null) {
+                storeFile = file(keystorePath)
+                storeType = "PKCS12"
+                storePassword = System.getenv("SIGNING_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("SIGNING_KEY_ALIAS")
+                keyPassword = System.getenv("SIGNING_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -22,6 +39,11 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = if (System.getenv("SIGNING_KEYSTORE_PATH") != null) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
     compileOptions {

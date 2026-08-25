@@ -193,6 +193,18 @@ put("include_reasoning", false)  // Don't return reasoning in response
    vllm serve --model your-model --port 8001
    ```
 
+## Releases
+
+`.github/workflows/release.yml` builds, signs, and publishes a release APK whenever a `v*` tag is pushed (or via manual `workflow_dispatch` against a tag ref). It:
+
+1. Builds `assembleRelease`, signed with the release key stored in repo secrets (`SIGNING_KEYSTORE_BASE64`, `SIGNING_KEYSTORE_PASSWORD`, `SIGNING_KEY_ALIAS`, `SIGNING_KEY_PASSWORD`).
+2. Attaches a [GitHub build provenance attestation](https://docs.github.com/en/actions/security-guides/using-artifact-attestations-to-establish-provenance-for-builds) to the APK.
+3. Publishes both to a GitHub Release, alongside a `.sha256` checksum.
+
+To cut a release: bump `versionCode`/`versionName` in `android-app/app/build.gradle.kts`, commit, then `git tag vX.Y.Z && git push origin vX.Y.Z`.
+
+The signing key is a **permanent commitment** — losing it means future releases can't be installed as in-place upgrades over earlier ones. It's held only in GitHub Actions secrets; back it up somewhere durable before rotating machines or losing access to this repo's secrets.
+
 ## Known Constraints
 
 ### General
