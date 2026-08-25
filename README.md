@@ -11,11 +11,11 @@ The initial proof-of-concept was built on a Supernote Nomad (Android 11, Wacom E
 ## Software
 
 - **Android app**: captures handwritten input, sends it to a vision-capable LLM, and renders the streamed response back as handwriting — all on-device, no backend server involved.
-- **LLM**: any OpenAI-compatible vision endpoint that you run yourself — [LM Studio](https://lmstudio.ai/) and [llama.cpp](https://github.com/ggml-org/llama.cpp) are the easiest ways to get one running locally; Ollama and vLLM also work.
+- **LLM**: any OpenAI-compatible vision endpoint — a local one you run yourself ([LM Studio](https://lmstudio.ai/) and [llama.cpp](https://github.com/ggml-org/llama.cpp) are the easiest to set up; Ollama and vLLM also work), or a hosted one like OpenRouter or Hugging Face Inference.
 
 ## Quick Start
 
-1. Start a vision-capable OpenAI-compatible LLM server. Easiest option is [LM Studio](https://lmstudio.ai/): download a "VL" (vision-language) model, then start the local server from the Developer tab (default port `1234`). See [android-app/QUICK_START.md](android-app/QUICK_START.md) for llama.cpp, Ollama, and vLLM alternatives.
+1. Get access to a vision-capable OpenAI-compatible endpoint. Easiest local option is [LM Studio](https://lmstudio.ai/): download a "VL" (vision-language) model, then start the local server from the Developer tab (default port `1234`). See [android-app/QUICK_START.md](android-app/QUICK_START.md) for llama.cpp, Ollama, and vLLM alternatives — or point the app at a hosted provider like OpenRouter instead.
 2. Get the app onto your device:
    - **Download a prebuilt APK** from [Releases](https://github.com/poita66/toms-diary/releases) (see [Verifying the APK](#verifying-the-apk) below), or
    - **Build it yourself**:
