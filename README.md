@@ -11,7 +11,7 @@ The initial proof-of-concept was built on a Supernote Nomad (Android 11, Wacom E
 ## Software
 
 - **Android app**: captures handwritten input, sends it to a vision-capable LLM, and renders the streamed response back as handwriting — all on-device, no backend server involved.
-- **LLM**: any OpenAI-compatible vision endpoint — a local one you run yourself ([LM Studio](https://lmstudio.ai/) and [llama.cpp](https://github.com/ggml-org/llama.cpp) are the easiest to set up; Ollama and vLLM also work), or a hosted one like OpenRouter or Hugging Face Inference.
+- **LLM**: any OpenAI-compatible vision endpoint — a local one you run yourself ([LM Studio](https://lmstudio.ai/) and [Ollama](https://ollama.com/) are the easiest to set up; [llama.cpp](https://github.com/ggml-org/llama.cpp) and vLLM also work but need more manual setup), or a hosted one like OpenRouter or Hugging Face Inference.
 
 ## Quick Start
 
@@ -63,7 +63,6 @@ Handwriting recognition and rendering are implemented via a vision-capable LLM p
 - Early requests aren't properly cancelled - so the answer might not match the image
 - Send button works on the response
 - Cannot cancel a send
-- Reconnection retries are too often
 - Writing is still laggy (not bad, but laggy)
 
 ## Features
