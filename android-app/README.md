@@ -2,7 +2,7 @@
 
 ## Overview
 
-This is the Android application for Tom's Diary, designed to run on the Supernote Nomad (Android 11, Wacom EMR). The app enables users to write handwritten notes to an AI agent via direct OpenAI-compatible API calls. The app sends handwriting to an LLM and displays the response as locally-rendered handwriting.
+This is the Android application for Tom's Diary, designed to run on the Supernote Nomad (Android 11, Wacom EMR). The app lets users chat with an AI agent by handwriting, via direct OpenAI-compatible API calls. Each message is sent as an image to a vision-capable LLM, and the reply is displayed as locally-rendered handwriting.
 
 ## Target Hardware
 

@@ -1,8 +1,8 @@
 # Tom's Diary
 
-This is a monorepo for Tom's Diary, a proof-of-concept written response journal, inspired by Tom Riddle's diary from Harry Potter and the Chamber of Secrets.
+This is a monorepo for Tom's Diary, a proof-of-concept handwritten chat app inspired by Tom Riddle's diary from Harry Potter and the Chamber of Secrets.
 
-The basic idea is that the user can write notes to the AI agent, and it can read these, wipe the page, and "write" out its response.
+The basic idea is that the user writes a message to the AI agent, and it reads that, wipes the page, and "writes" out its reply — currently a live back-and-forth chat rather than an asynchronous journal.
 
 ## Hardware
 
@@ -11,14 +11,11 @@ The initial proof-of-concept was built on a Supernote Nomad (Android 11, Wacom E
 ## Software
 
 - **Android app**: captures handwritten input, sends it to a vision-capable LLM, and renders the streamed response back as handwriting — all on-device, no backend server involved.
-- **LLM**: any OpenAI-compatible vision endpoint (vLLM, Ollama, etc.) that you run yourself.
+- **LLM**: any OpenAI-compatible vision endpoint that you run yourself — [LM Studio](https://lmstudio.ai/) and [llama.cpp](https://github.com/ggml-org/llama.cpp) are the easiest ways to get one running locally; Ollama and vLLM also work.
 
 ## Quick Start
 
-1. Start a vision-capable OpenAI-compatible LLM server, e.g. vLLM:
-   ```bash
-   vllm serve --model Qwen/Qwen2.5-VL-7B-Instruct --port 8001
-   ```
+1. Start a vision-capable OpenAI-compatible LLM server. Easiest option is [LM Studio](https://lmstudio.ai/): download a "VL" (vision-language) model, then start the local server from the Developer tab (default port `1234`). See [android-app/QUICK_START.md](android-app/QUICK_START.md) for llama.cpp, Ollama, and vLLM alternatives.
 2. Build and install the Android app:
    ```bash
    cd android-app
@@ -26,7 +23,7 @@ The initial proof-of-concept was built on a Supernote Nomad (Android 11, Wacom E
    adb install -r app/build/outputs/apk/debug/app-debug.apk
    adb shell am start -n com.tomsdiary/.MainActivity
    ```
-3. Open **Settings** in the app and set the LLM Base URL (e.g. `http://localhost:8001/v1`).
+3. Open **Settings** in the app and set the LLM Base URL (e.g. `http://localhost:1234/v1`).
 4. Write on the canvas and watch the response render as handwriting.
 
 See [android-app/QUICK_START.md](android-app/QUICK_START.md) for full setup details and troubleshooting.

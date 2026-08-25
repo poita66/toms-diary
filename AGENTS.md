@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-AI-powered handwritten journal system with:
+AI-powered handwritten chat app with:
 - **Android App**: Kotlin for Supernote Nomad (Android 11+, minSdk 30)
 - **Local Processing**: Direct OpenAI API calls with local handwriting rendering
 - **LLM Backend**: Any OpenAI-compatible API (vLLM, Ollama, etc.)
@@ -39,28 +39,35 @@ adb shell am start -n com.tomsdiary/.MainActivity
 
 ### LLM Server (Required)
 
-Start your OpenAI-compatible LLM server before using the app:
+Start an OpenAI-compatible LLM server with a **vision-capable** model before using the app. Pick whichever you have:
+
+**LM Studio** (GUI, easiest): download a "VL" model, then Developer tab → Start Server. Default port `1234`.
+
+**llama.cpp:**
+```bash
+llama-server -m model.gguf --mmproj model-mmproj.gguf --port 8080
+```
+
+**Ollama:**
+```bash
+ollama pull llama3.2-vision
+ollama serve  # Default port 11434
+```
 
 **vLLM:**
 ```bash
 vllm serve --model your-model-name --port 8001
 ```
 
-**Ollama:**
+**Test the connection** (adjust host/port to your server):
 ```bash
-ollama serve  # Default port 11434
-# Then enable API mode or use a wrapper
-```
-
-**Test the connection:**
-```bash
-curl http://localhost:8001/v1/models
+curl http://localhost:8080/v1/models
 ```
 
 ### Device Info
 
 **Android (Supernote Nomad A6 X2)**
-- LLM: localhost:8001 (vLLM) or localhost:11434 (Ollama)
+- LLM: localhost:1234 (LM Studio), localhost:8080 (llama.cpp), localhost:11434 (Ollama), or localhost:8001 (vLLM)
 - Screen: 1324x1752 pixels, line spacing 150px, first line Y=180px
 
 ## Code Style Guidelines

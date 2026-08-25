@@ -4,20 +4,28 @@
 
 1. **Java 17** (Gradle 8.10 has issues with Java 21+)
 2. **Android SDK** with command-line tools
-3. **OpenAI-compatible LLM server** (vLLM, Ollama, etc.)
+3. **OpenAI-compatible LLM server** with a **vision-capable** model (LM Studio, llama.cpp, Ollama, vLLM, etc.)
 
 ## Step 1: Start Your LLM Server
 
-### Option A: vLLM (Recommended)
-```bash
-# Install vLLM
-pip install vllm
+Any server exposing an OpenAI-compatible `/v1/chat/completions` endpoint works, as long as the model can read images. Pick whichever you already have set up:
 
-# Start with a vision model
-vllm serve --model Qwen/Qwen2.5-VL-7B-Instruct --port 8001
+### Option A: LM Studio (Easiest)
+1. Download [LM Studio](https://lmstudio.ai/) and open it
+2. Search for a vision-capable model (look for "VL" in the name — a Qwen3.5-VL GGUF is a good default, pick a size that fits your hardware) and download it
+3. Go to the **Developer** tab → **Start Server** (default port `1234`)
+
+### Option B: llama.cpp
+```bash
+# Build llama.cpp, or install a prebuilt release: https://github.com/ggml-org/llama.cpp
+
+# Vision models need both the model and its multimodal projector file
+llama-server -m Qwen3.5-VL-8B-Instruct-Q4_K_M.gguf \
+  --mmproj Qwen3.5-VL-8B-Instruct-mmproj-F16.gguf \
+  --port 8080
 ```
 
-### Option B: Ollama
+### Option C: Ollama
 ```bash
 # Install Ollama
 # https://ollama.com/download
@@ -27,6 +35,15 @@ ollama pull llama3.2-vision
 
 # Start server (default port 11434)
 ollama serve
+```
+
+### Option D: vLLM
+```bash
+# Install vLLM
+pip install vllm
+
+# Start with a vision model
+vllm serve --model Qwen/Qwen3.5-VL-8B-Instruct --port 8001
 ```
 
 ## Step 2: Build and Install the App
@@ -49,8 +66,10 @@ adb shell am start -n com.tomsdiary/.MainActivity
 1. Open the app
 2. Tap **Settings** (gear icon)
 3. Update **LLM Settings**:
-   - For vLLM: `http://localhost:8001/v1`
+   - For LM Studio: `http://localhost:1234/v1`
+   - For llama.cpp: `http://localhost:8080/v1`
    - For Ollama: `http://localhost:11434/v1`
+   - For vLLM: `http://localhost:8001/v1`
 4. Tap **Save**
 
 ## Step 4: Write and Chat
@@ -65,13 +84,20 @@ adb shell am start -n com.tomsdiary/.MainActivity
 ### "Connection refused" or "Failed to connect"
 - Ensure your LLM server is running
 - Check the URL in Settings matches your server
-- For vLLM: `curl http://localhost:8001/v1/models` should return models
+- For LM Studio: `curl http://localhost:1234/v1/models` should return models
+- For llama.cpp: `curl http://localhost:8080/v1/models` should return models
 - For Ollama: `curl http://localhost:11434/api/tags` should return models
+- For vLLM: `curl http://localhost:8001/v1/models` should return models
 
 ### "Model not found"
-- Verify the model name in Settings
-- For vLLM, the default model is `default`
+- Verify the model name in Settings matches what your server has loaded
+- For LM Studio and llama.cpp, use the exact model/file name shown by the server
 - For Ollama, use the exact model name (e.g., `llama3.2-vision`)
+- For vLLM, the default model is `default`
+
+### Response text but no image understanding
+- The model must be **vision-capable** — a text-only model will reply but won't "see" your handwriting
+- For llama.cpp, make sure `--mmproj` points at the matching multimodal projector file for your model
 
 ### Slow responses
 - Use `enable_thinking: false` (already configured in app)
@@ -96,11 +122,12 @@ adb shell am start -n com.tomsdiary/.MainActivity
 The device connects via USB/WiFi. If your LLM server is on the same network:
 
 1. Find your computer's IP: `ip addr show` (Linux) or `ipconfig` (Windows)
-2. In app Settings, use: `http://<your-ip>:8001/v1`
+2. In app Settings, use: `http://<your-ip>:<port>/v1` (matching whichever server you're running)
 3. Ensure your LLM server accepts external connections:
-   ```bash
-   vllm serve --model ... --host 0.0.0.0 --port 8001
-   ```
+   - **LM Studio**: In the Developer tab server settings, enable "Serve on Local Network"
+   - **llama.cpp**: `llama-server -m ... --mmproj ... --host 0.0.0.0 --port 8080`
+   - **Ollama**: `OLLAMA_HOST=0.0.0.0 ollama serve`
+   - **vLLM**: `vllm serve --model ... --host 0.0.0.0 --port 8001`
 
 ## Next Steps
 

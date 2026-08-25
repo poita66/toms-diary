@@ -55,10 +55,16 @@ Android App → OpenAI API → Local Handwriting Renderer → Android App
 
 ### Example Endpoints
 
-**vLLM:**
+**LM Studio:**
 ```
-Base URL: http://localhost:8001/v1
-Model: default
+Base URL: http://localhost:1234/v1
+Model: Your loaded model's name (as shown in LM Studio)
+```
+
+**llama.cpp:**
+```
+Base URL: http://localhost:8080/v1
+Model: default (llama-server ignores the model field, but one is required)
 ```
 
 **Ollama:**
@@ -67,11 +73,13 @@ Base URL: http://localhost:11434/v1
 Model: llama3.2-vision (or any vision model)
 ```
 
-**Local AI Studio:**
+**vLLM:**
 ```
-Base URL: http://localhost:1234/v1
-Model: Your model name
+Base URL: http://localhost:8001/v1
+Model: default
 ```
+
+All of the above require a **vision-capable** model — the app sends the canvas as an image, not just text.
 
 ## Font
 
