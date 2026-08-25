@@ -16,6 +16,7 @@ import androidx.appcompat.app.AppCompatActivity
 import kotlinx.coroutines.*
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 class MainActivity : AppCompatActivity() {
 
@@ -29,8 +30,12 @@ class MainActivity : AppCompatActivity() {
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val isProcessing = AtomicBoolean(false)
-    private val isCancelled = AtomicBoolean(false)
-    
+    // Bumped on every new send and on every explicit cancel. A superseded/cancelled
+    // request's own coroutine keeps running (OkHttp cancellation is best-effort), but it
+    // compares its captured generation against this before touching any UI/state, so a
+    // stale response can never clobber a newer one or resurrect a cancelled request.
+    private val requestGeneration = AtomicInteger(0)
+
     // LLM configuration loaded from preferences
     private lateinit var openAIClient: OpenAIClient
     private lateinit var handwritingRenderer: HandwritingRenderer
@@ -116,7 +121,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         btnSend.setOnClickListener {
-            sendCanvasImage()
+            if (isProcessing.get()) {
+                cancelCurrentSend()
+            } else {
+                sendCanvasImage()
+            }
         }
 
         btnSettings.setOnClickListener {
@@ -191,8 +200,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateSendButtonState() {
-        btnSend.isEnabled = !autoSendEnabled
-        btnSend.alpha = if (autoSendEnabled) 0.5f else 1.0f
+        if (isProcessing.get()) {
+            btnSend.isEnabled = true
+            btnSend.alpha = 1.0f
+            btnSend.text = "CANCEL"
+        } else {
+            btnSend.isEnabled = !autoSendEnabled
+            btnSend.alpha = if (autoSendEnabled) 0.5f else 1.0f
+            btnSend.text = "SEND"
+        }
     }
 
     private fun clearCanvas() {
@@ -203,17 +219,14 @@ class MainActivity : AppCompatActivity() {
 
     fun scheduleAutoSend() {
         if (isProcessing.get()) {
-            // Cancel current processing
-            isProcessing.set(false)
-            btnSend.isEnabled = true
-            statusText.text = "Request cancelled"
+            cancelCurrentSend()
             return
         }
-        
+
         if (!autoSendEnabled) {
             return
         }
-        
+
         cancelAutoSend()
         autoSendJob = scope.launch {
             delay(AUTO_SEND_DELAY_MS)
@@ -226,20 +239,41 @@ class MainActivity : AppCompatActivity() {
         autoSendJob = null
     }
 
+    /**
+     * Cancels the in-flight request, if any. Bumps [requestGeneration] so the old
+     * request's coroutine can't touch UI/state even if OkHttp's cancel doesn't unblock
+     * it immediately, then cancels the underlying call to actually stop the network I/O.
+     */
+    private fun cancelCurrentSend() {
+        if (!isProcessing.get()) return
+        requestGeneration.incrementAndGet()
+        openAIClient.cancelActiveCall()
+        isProcessing.set(false)
+        updateSendButtonState()
+        statusText.text = "Cancelled"
+        statusText.setTextColor(Color.RED)
+    }
+
     private fun sendCanvasImage() {
         cancelAutoSend()
+
+        // Nothing hand-drawn since the last clear (e.g. only a rendered response is on
+        // screen) - don't ship that as if it were new input.
+        if (canvasView.getHandwritingBounds() == null) {
+            android.util.Log.d("MainActivity", "sendCanvasImage: no handwriting on canvas, ignoring")
+            return
+        }
 
         // Atomic compare-and-set to prevent race conditions
         if (!isProcessing.compareAndSet(false, true)) {
             android.util.Log.d("MainActivity", "sendCanvasImage: already processing, ignoring")
             return
         }
-        // Reset cancellation flag for new request
-        isCancelled.set(false)
+        val myGen = requestGeneration.incrementAndGet()
 
         android.util.Log.d("MainActivity", "sendCanvasImage: history size = ${conversationHistory.size}")
-        
-        btnSend.isEnabled = false
+
+        updateSendButtonState()
         statusText.text = "Sending..."
         statusText.setTextColor(Color.BLUE)
         canvasView.resetWordPosition()
@@ -247,15 +281,15 @@ class MainActivity : AppCompatActivity() {
         scope.launch(Dispatchers.IO) {
             try {
                 val fullBitmap = captureCanvas()
-                
+
                 // Get dynamic handwriting bounds
                 val bounds = canvasView.getHandwritingBounds()
-                
+
                 val cropLeft = if (bounds != null) bounds.left else 0
                 val cropTop = if (bounds != null) bounds.top else 0
                 val cropWidth = if (bounds != null) bounds.right - bounds.left else fullBitmap.width
                 val cropHeight = if (bounds != null) bounds.bottom - bounds.top else fullBitmap.height
-                
+
                 val croppedBitmap = Bitmap.createBitmap(
                     fullBitmap,
                     cropLeft,
@@ -263,110 +297,124 @@ class MainActivity : AppCompatActivity() {
                     cropWidth,
                     cropHeight
                 )
-                
+
                 val base64Image = bitmapToBase64(croppedBitmap)
                 currentInputBitmap = base64Image
-                
+
                 android.util.Log.d("MainActivity", "Image sizes: cropped=${croppedBitmap.width}x${croppedBitmap.height}, base64 length=${base64Image.length}")
-                
+
                 // Send conversation history (text only) to provide context
                 val historyToSend = conversationHistory.takeLast(10).toList()
                 android.util.Log.d("MainActivity", "Sending ${historyToSend.size} turns of history to LLM")
-                
+
                 withContext(Dispatchers.Main) {
-                    statusText.text = "Processing..."
+                    if (myGen == requestGeneration.get()) {
+                        statusText.text = "Processing..."
+                    }
                 }
-                
+
                 // Process locally with OpenAI API
-                processLocally(base64Image, fullBitmap.width, historyToSend)
-                
+                processLocally(base64Image, fullBitmap.width, historyToSend, myGen)
+
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    isProcessing.set(false)
-                    btnSend.isEnabled = true
-                    statusText.text = "Error: ${e.message}"
-                    Toast.makeText(this@MainActivity, "Failed: ${e.message}", Toast.LENGTH_LONG).show()
+                    if (myGen == requestGeneration.get()) {
+                        isProcessing.set(false)
+                        updateSendButtonState()
+                        statusText.text = "Error: ${e.message}"
+                        Toast.makeText(this@MainActivity, "Failed: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
                 }
             }
         }
     }
 
-    private fun processLocally(base64Image: String, screenWidth: Int, history: List<Pair<String, String>>) {
+    private fun processLocally(base64Image: String, screenWidth: Int, history: List<Pair<String, String>>, myGen: Int) {
         scope.launch(Dispatchers.IO) {
             try {
                 val fontSize = handwritingRenderer.calculateFontSize(screenWidth)
                 android.util.Log.d("MainActivity", "Using font size: $fontSize for screen width: $screenWidth")
-                
+
                 var fullResponse = ""
                 for (chunk in openAIClient.chatStreamWithImage(
                     sessionId = "local",
                     imageBase64 = base64Image,
                     history = history,
                     persona = currentPersona,
-                    onCancel = { isCancelled.get() }
+                    onCancel = { myGen != requestGeneration.get() }
                 )) {
                     val token = chunk.token
                     if (token != null) {
                         fullResponse += token
                         withContext(Dispatchers.Main) {
-                            statusText.text = "Writing..."
+                            if (myGen == requestGeneration.get()) {
+                                statusText.text = "Writing..."
+                            }
                         }
                     }
                     if (chunk.isDone) break
                 }
-                
+
+                // This request was cancelled or superseded by a newer one - the stream
+                // above already stopped early via onCancel, so just stop here without
+                // touching any shared state.
+                if (myGen != requestGeneration.get()) {
+                    android.util.Log.d("MainActivity", "processLocally: generation $myGen superseded, discarding response")
+                    return@launch
+                }
+
                 // Extract transcription and response from full response
                 val transcription = if (fullResponse.contains("[TRANSCRIPTION]") && fullResponse.contains("[/TRANSCRIPTION]")) {
                     fullResponse.substringAfter("[TRANSCRIPTION]").substringBefore("[/TRANSCRIPTION]").trim()
                 } else { "" }
-                
+
                 val responseText = if (fullResponse.contains("[/TRANSCRIPTION]")) {
                     fullResponse.substringAfter("[/TRANSCRIPTION]").trim()
                 } else if (fullResponse.contains("[TRANSCRIPTION]")) {
                     fullResponse.substringBefore("[TRANSCRIPTION]").trim()
                 } else { fullResponse }
-                
+
                 currentResponseText = responseText
                 currentTranscription = transcription
-                
+
                 android.util.Log.d("MainActivity", "Full response length: ${fullResponse.length}")
                 android.util.Log.d("MainActivity", "Full response: '$fullResponse'")
                 android.util.Log.d("MainActivity", "Transcription: '$transcription'")
                 android.util.Log.d("MainActivity", "Response: '$responseText'")
-                
+
                 withContext(Dispatchers.Main) {
-                    canvasView.clear()
-                    canvasView.resetWordPosition()
-                    renderResponseLocally(responseText, fontSize, screenWidth)
-                    
-                    isProcessing.set(false)
-                    isCancelled.set(false)
-                    if (isCancelled.get()) {
-                        statusText.text = "Cancelled"
-                    } else {
-                        btnSend.isEnabled = true
+                    if (myGen == requestGeneration.get()) {
+                        canvasView.clear()
+                        canvasView.resetWordPosition()
+                        renderResponseLocally(responseText, fontSize, screenWidth, myGen)
+
+                        isProcessing.set(false)
+                        updateSendButtonState()
                         statusText.text = "Response complete"
                         saveToHistory()
                     }
                 }
-                
+
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    isProcessing.set(false)
-                    isCancelled.set(false)
-                    btnSend.isEnabled = true
-                    statusText.text = "Error: ${e.message}"
-                    Toast.makeText(this@MainActivity, "Processing failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                    if (myGen == requestGeneration.get()) {
+                        isProcessing.set(false)
+                        updateSendButtonState()
+                        statusText.text = "Error: ${e.message}"
+                        Toast.makeText(this@MainActivity, "Processing failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                    } else {
+                        android.util.Log.d("MainActivity", "processLocally: generation $myGen cancelled (${e.message})")
+                    }
                 }
             }
         }
     }
     
-    private fun renderResponseLocally(text: String, fontSize: Int, screenWidth: Int) {
+    private fun renderResponseLocally(text: String, fontSize: Int, screenWidth: Int, myGen: Int) {
         scope.launch(Dispatchers.Default) {
             // Calculate actual usable width: screen width minus left/right padding (40px each side)
             val maxWidth = screenWidth - 80
-            
+
             val options = HandwritingRenderer.RenderOptions(
                 fontSize = fontSize,
                 backgroundColor = Color.WHITE,
@@ -375,10 +423,13 @@ class MainActivity : AppCompatActivity() {
                 maxWidth = maxWidth,
                 addVariation = true
             )
-            
+
             for (wordResult in handwritingRenderer.renderWordStream(text, 0, options)) {
+                if (myGen != requestGeneration.get()) break
                 withContext(Dispatchers.Main) {
-                    displayWord(wordResult.bitmap)
+                    if (myGen == requestGeneration.get()) {
+                        displayWord(wordResult.bitmap)
+                    }
                 }
                 // Small delay for smooth streaming effect
                 delay(50)

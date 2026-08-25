@@ -60,9 +60,6 @@ Handwriting recognition and rendering are implemented via a vision-capable LLM p
 
 ## Bugs
 
-- Early requests aren't properly cancelled - so the answer might not match the image
-- Send button works on the response
-- Cannot cancel a send
 - Writing is still laggy (not bad, but laggy)
 
 ## Features

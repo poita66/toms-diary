@@ -23,12 +23,20 @@ class OpenAIClient(
         .build()
     
     private val gson = Gson()
-    
+
+    @Volatile
+    private var activeCall: Call? = null
+
+    /** Cancels the in-flight streaming call, if any. Safe to call from any thread. */
+    fun cancelActiveCall() {
+        activeCall?.cancel()
+    }
+
     data class ChatMessage(
         val role: String,
         val content: String
     )
-    
+
     interface StreamChunk {
         val token: String?
         val isDone: Boolean
@@ -84,28 +92,29 @@ class OpenAIClient(
             .build()
         
         val call = client.newCall(request)
-        
+        activeCall = call
+
         return sequence {
             try {
                 val response = call.execute()
                 if (!response.isSuccessful) {
                     throw IOException("Stream request failed: ${response.code}")
                 }
-                
+
                 val responseBody = response.body?.string() ?: return@sequence
-                
+
                 for (line in responseBody.split("\n")) {
                     if (onCancel()) break
-                    
+
                     val trimmedLine = line.trim()
-                    
+
                     if (trimmedLine.startsWith("data: ")) {
                         val data = trimmedLine.substring(6)
                         if (data == "[DONE]") {
                             yield(StreamChunkImpl(null, true))
                             break
                         }
-                        
+
                         try {
                             val token = extractTokenFromChunk(data)
                             if (token.isNotEmpty()) {
@@ -116,16 +125,17 @@ class OpenAIClient(
                         }
                     }
                 }
-                
+
             } catch (e: Exception) {
                 android.util.Log.e("OpenAIClient", "Stream failed", e)
                 throw RuntimeException("Stream failed: ${e.message}", e)
             } finally {
                 call.cancel()
+                if (activeCall === call) activeCall = null
             }
         }
     }
-    
+
     fun chatStreamWithImage(
         sessionId: String,
         imageBase64: String,
@@ -147,28 +157,29 @@ class OpenAIClient(
             .build()
         
         val call = client.newCall(request)
-        
+        activeCall = call
+
         return sequence {
             try {
                 val response = call.execute()
                 if (!response.isSuccessful) {
                     throw IOException("Stream request failed: ${response.code}")
                 }
-                
+
                 val responseBody = response.body?.string() ?: return@sequence
-                
+
                 for (line in responseBody.split("\n")) {
                     if (onCancel()) break
-                    
+
                     val trimmedLine = line.trim()
-                    
+
                     if (trimmedLine.startsWith("data: ")) {
                         val data = trimmedLine.substring(6)
                         if (data == "[DONE]") {
                             yield(StreamChunkImpl(null, true))
                             break
                         }
-                        
+
                         try {
                             val token = extractTokenFromChunk(data)
                             if (token.isNotEmpty()) {
@@ -179,16 +190,17 @@ class OpenAIClient(
                         }
                     }
                 }
-                
+
             } catch (e: Exception) {
                 android.util.Log.e("OpenAIClient", "Stream failed", e)
                 throw RuntimeException("Stream failed: ${e.message}", e)
             } finally {
                 call.cancel()
+                if (activeCall === call) activeCall = null
             }
         }
     }
-    
+
     private fun createRequestJson(messages: List<ChatMessage>, streaming: Boolean = false): String {
         val messagesArray = JsonArray()
         for (msg in messages) {
