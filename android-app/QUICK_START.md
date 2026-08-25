@@ -12,17 +12,15 @@ Any server exposing an OpenAI-compatible `/v1/chat/completions` endpoint works, 
 
 ### Option A: LM Studio (Easiest)
 1. Download [LM Studio](https://lmstudio.ai/) and open it
-2. Search for a vision-capable model (look for "VL" in the name — a Qwen3.5-VL GGUF is a good default, pick a size that fits your hardware) and download it
+2. Search for `unsloth/Qwen3.5-9B-GGUF` (or any other vision-capable model) and download the `Q4_K_M` quant
 3. Go to the **Developer** tab → **Start Server** (default port `1234`)
 
 ### Option B: llama.cpp
 ```bash
 # Build llama.cpp, or install a prebuilt release: https://github.com/ggml-org/llama.cpp
 
-# Vision models need both the model and its multimodal projector file
-llama-server -m Qwen3.5-VL-8B-Instruct-Q4_K_M.gguf \
-  --mmproj Qwen3.5-VL-8B-Instruct-mmproj-F16.gguf \
-  --port 8080
+# -hf pulls the model straight from Hugging Face (multimodal projector included automatically)
+llama-server -hf unsloth/Qwen3.5-9B-GGUF:Q4_K_M --port 8080
 ```
 
 ### Option C: Ollama
@@ -30,8 +28,10 @@ llama-server -m Qwen3.5-VL-8B-Instruct-Q4_K_M.gguf \
 # Install Ollama
 # https://ollama.com/download
 
-# Pull a vision model
+# Pull a vision-capable model — either a named model:
 ollama pull llama3.2-vision
+# ...or pull a GGUF directly from Hugging Face:
+ollama pull hf.co/unsloth/Qwen3.5-9B-GGUF:Q4_K_M
 
 # Start server (default port 11434)
 ollama serve
@@ -42,8 +42,9 @@ ollama serve
 # Install vLLM
 pip install vllm
 
-# Start with a vision model
-vllm serve --model Qwen/Qwen3.5-VL-8B-Instruct --port 8001
+# Start with a vision-capable model in a vLLM-supported format
+# (vLLM's GGUF support is limited — an AWQ/GPTQ/full-precision checkpoint is more reliable)
+vllm serve --model <your-model> --port 8001
 ```
 
 ## Step 2: Build and Install the App

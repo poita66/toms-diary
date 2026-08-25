@@ -41,22 +41,22 @@ adb shell am start -n com.tomsdiary/.MainActivity
 
 Start an OpenAI-compatible LLM server with a **vision-capable** model before using the app. Pick whichever you have:
 
-**LM Studio** (GUI, easiest): download a "VL" model, then Developer tab → Start Server. Default port `1234`.
+**LM Studio** (GUI, easiest): download a vision-capable model (e.g. `unsloth/Qwen3.5-9B-GGUF`, `Q4_K_M` quant), then Developer tab → Start Server. Default port `1234`.
 
 **llama.cpp:**
 ```bash
-llama-server -m model.gguf --mmproj model-mmproj.gguf --port 8080
+llama-server -hf unsloth/Qwen3.5-9B-GGUF:Q4_K_M --port 8080
 ```
 
 **Ollama:**
 ```bash
-ollama pull llama3.2-vision
+ollama pull llama3.2-vision   # or: ollama pull hf.co/unsloth/Qwen3.5-9B-GGUF:Q4_K_M
 ollama serve  # Default port 11434
 ```
 
 **vLLM:**
 ```bash
-vllm serve --model your-model-name --port 8001
+vllm serve --model your-model-name --port 8001  # vLLM's GGUF support is limited; prefer AWQ/GPTQ/full-precision
 ```
 
 **Test the connection** (adjust host/port to your server):
